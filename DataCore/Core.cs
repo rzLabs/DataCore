@@ -15,7 +15,6 @@ using DataCore.Structures;
 /// </summary>
 /// TODO: Add tracking of orphaned files (maybe for a quick versioning system?)
 /// TODO: Update method UpdateFileEntry/UpdateFileEntries to store updated file (whose new file gets appended) to data.blk
-/// TODO: Add 'previous_name" field to BlankIndexEntry (e.g. (db_item_{0}, DateTime.Now()))
 /// TODO: Add overridable (during construction?) validExt list
 /// TODO: Add support for loading / displaying / saving data.blk
 namespace DataCore
@@ -195,8 +194,10 @@ namespace DataCore
         /// <param name="decodeNames">Determines if the file names should be decoded during load</param>
         /// <param name="reportInterval">How many bytes should be processed before reporting</param>
         /// <returns>A populated index or null</returns>
-        public List<IndexEntry> Load(string path, bool isBlank, bool decodeNames, int reportInterval)
+        public List<IndexEntry> Load(string path, bool decodeNames, int reportInterval)
         {
+            bool isBlank = !path.Contains(".000");
+
             List<IndexEntry> index = new List<IndexEntry>();
 
             byte b = 0;
@@ -256,11 +257,12 @@ namespace DataCore
         /// <param name="buildPath">Location to build the new data.000 at</param>
         /// <param name="encodeNames">Determines if the fileNames in index should be encoded</param>
         /// <returns>bool value indicating success or failure</returns>
-        /// TODO: Merge both IndexEntry / BlankIndexEntry saving via this method
         public void Save(ref List<IndexEntry> index, string buildPath, bool encodeNames)
         {
+            bool isBlank = !buildPath.Contains(".000");
+
             OnTotalMaxDetermined(new TotalMaxArgs(1));
-            OnTotalProgressChanged(new TotalChangedArgs(0, "Saving index.000..."));
+            OnTotalProgressChanged(new TotalChangedArgs(0, string.Format("Saving index.{0}...", (isBlank) ? "blk" : "000")));
 
             if (File.Exists(buildPath)) { File.Delete(buildPath); }
 
@@ -389,27 +391,25 @@ namespace DataCore
         /// <param name="minSize">Minimum size of blank space</param>
         /// <param name="maxSize">Maximum size of blank space</param>
         /// <returns>Populated BlankIndexEntry (if one exists)</returns>
-        public BlankIndexEntry GetClosestEntry(ref List<BlankIndexEntry> blankIndex, int dataId, int minSize, int maxSize)
+        public IndexEntry GetClosestEntry(ref List<IndexEntry> blankIndex, int dataId, int minSize, int maxSize)
         {
-            //return blankIndex.Find(i => i.AvailableSpace >= minSize && i.AvailableSpace <= maxSize);
-
             // Set lastSmallest to maximum desired size
             int lastSmallest = maxSize;
 
             // Define a placeholder BlankIndexEntry
-            BlankIndexEntry returnEntry = null;
+            IndexEntry returnEntry = null;
 
             // Search for all BlankIndexEntries that are in the desired dataId, are above the minSize and below the maxSize
-            List<BlankIndexEntry> result = blankIndex.FindAll(i => i.DataID == dataId && i.AvailableSpace >= minSize && i.AvailableSpace <= maxSize);
+            List<IndexEntry> result = blankIndex.FindAll(i => i.DataID == dataId && i.Length >= minSize && i.Length <= maxSize);
 
             // Loop through results to find closest match
-            foreach (BlankIndexEntry blankIndexEntry in result)
+            foreach (IndexEntry blankIndexEntry in result)
             {
                 // If current entry has AvailableSpace smaller than the last accepted entry (or maxSize)
-                if (blankIndexEntry.AvailableSpace <= lastSmallest)
+                if (blankIndexEntry.Length <= lastSmallest)
                 {
                     // Set the lastSmallest value to current entry AvailableSpace
-                    lastSmallest = blankIndexEntry.AvailableSpace;
+                    lastSmallest = blankIndexEntry.Length;
 
                     // Set returnEntry
                     returnEntry = blankIndexEntry;
@@ -803,6 +803,107 @@ namespace DataCore
                             {
                                 // Set position to eof
                                 fs.Position = fs.Length;
+                                // Update the original index entry with the new files offset
+                                indexEntry.Offset = fs.Position;
+                            }
+                            else { fs.Position = indexEntry.Offset; }
+
+                            // Update the entries length in the referenced data.000 index
+                            indexEntry.Length = fileBytes.Length;
+
+                            // Buffer the file into byte array and write it to fs
+                            fileBytes = File.ReadAllBytes(filePath);
+
+                            // If the fileBytes need to be encrypted do so
+                            if (XOR.Encrypted(fileExt.ToUpper())) { byte b = 0; XOR.Cipher(ref fileBytes, ref b); }
+
+                            // If no chunkSize is provided, generate default
+                            if (chunkSize == 0) { chunkSize = Math.Max(64000, (int)(fileBytes.Length * .02)); }
+
+                            // Iterate through the fileByte array writing the chunkSize to fs and reporting current position in
+                            // the array to the caller via CurrentProgress events
+                            for (int byteCount = 0; byteCount < fileBytes.Length; byteCount += Math.Min(fileBytes.Length - byteCount, chunkSize))
+                            {
+                                bw.Write(fileBytes, byteCount, Math.Min(fileBytes.Length - byteCount, chunkSize));
+                                OnCurrentProgressChanged(new CurrentChangedArgs(byteCount, ""));
+                            }
+
+                            fileBytes = null;
+
+                            // Issue progress reset event
+                            OnCurrentProgressReset(EventArgs.Empty);
+                        }
+                    }
+                }
+                else { OnError(new ErrorArgs(string.Format("[UpdateFileEntry] Cannot locate entry for {0} in referenced index", fileName))); }
+            }
+            else { OnError(new ErrorArgs(string.Format("[UpdateFileEntry] Cannot locate: {0}", dataPath))); }
+        }
+
+        // Create overload that accepts reference to data.lgy for catalouging the blanked space
+        /// <summary>
+        /// Updates the dataDirectory data.xxx stored copy of the physical file at filePath
+        /// </summary>
+        /// <param name="index">Reference to data.000 index to be updated</param>
+        /// <param name="blankIndex">Reference to data.lgy index to be updated</param>
+        /// <param name="dataDirectory">Location of the data.xxx files</param>
+        /// <param name="filePath">Location of the file being imported</param>
+        /// <param name="chunkSize">Size (in bytes) to process each iteration of the write loop</param>
+        public void UpdateFileEntry(ref List<IndexEntry> index, ref List<IndexEntry> blankIndex, string dataDirectory, string filePath, int chunkSize)
+        {
+            // Define some temporary information about the file being imported
+            string fileName = Path.GetFileName(filePath);
+            string decodedFileName = string.Empty;
+            string fileExt;
+
+            // Check if fileName is encoded and decode (if needed) and determine fileName's extension
+            bool isEncoded = StringCipher.IsEncoded(fileName);
+            if (isEncoded)
+            {
+                decodedFileName = StringCipher.Decode(fileName);
+                fileExt = Path.GetExtension(decodedFileName.Remove(0, 1));
+            }
+            else { fileExt = Path.GetExtension(fileName.Remove(0, 1)); }
+
+            // Determine the path to the current files appropriate data.xxx
+            string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, GetID(fileName, isEncoded));
+
+            // If the physical data.xxx actually exists
+            if (File.Exists(dataPath))
+            {
+                // Find the matching entry for the file (if existing)
+                IndexEntry indexEntry = index.Find(i => i.Name == fileName);
+
+                // If the indexEntry exists in the referenced data.000 index
+                if (indexEntry != null)
+                {
+                    // Open it in a file-stream for manipulation
+                    using (FileStream fs = new FileStream(dataPath, FileMode.Open, FileAccess.Write))
+                    {
+                        // Using a binarywriter write to the filestream with appropriate encoding
+                        using (BinaryWriter bw = new BinaryWriter(fs, encoding))
+                        {
+                            // Create a byte[] array of the filePaths length for storing the file
+                            byte[] fileBytes = new byte[new FileInfo(filePath).Length];
+
+                            // Inform the caller of progress count for this operation
+                            OnCurrentMaxDetermined(new CurrentMaxArgs(fileBytes.Length));
+
+                            // Determine if the file should be added to the end of it's housing .xxx
+                            if (fileBytes.Length > indexEntry.Length)
+                            {
+                                // Record information about the file being orphaned and add it to the blankIndex
+                                blankIndex.Add(new IndexEntry
+                                {
+                                    Name = string.Format("{0}_{1}", indexEntry.Name, DateTime.Now),
+                                    Length = indexEntry.Length,
+                                    Offset = indexEntry.Offset,
+                                    DataID = indexEntry.DataID
+                                });
+
+                                // Set position to eof
+                                fs.Position = fs.Length;
+
                                 // Update the original index entry with the new files offset
                                 indexEntry.Offset = fs.Position;
                             }
