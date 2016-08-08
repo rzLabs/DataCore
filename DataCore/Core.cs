@@ -24,6 +24,8 @@ namespace DataCore
     /// </summary>
     public class Core
     {
+        internal bool NamesHashed = false;
+
         /// <summary>
         /// Defines the encoding of files to be the default of the system
         /// unless changed by the caller during construction of Core
@@ -244,6 +246,8 @@ namespace DataCore
                 }
 
                 OnTotalProgressReset(EventArgs.Empty);
+
+                NamesHashed = !decodeNames;
             }
             else { OnError(new ErrorArgs(string.Format("[Load] Cannot find data.000 at path: {0}", path))); }
 
@@ -257,8 +261,10 @@ namespace DataCore
         /// <param name="buildPath">Location to build the new data.000 at</param>
         /// <param name="encodeNames">Determines if the fileNames in index should be encoded</param>
         /// <returns>bool value indicating success or failure</returns>
-        public void Save(ref List<IndexEntry> index, string buildPath, bool encodeNames)
+        /// TODO: UPDATE PATH!
+        public void Save(ref List<IndexEntry> index, string buildDirectory, bool isBlankIndex, bool encodeNames)
         {
+            string buildPath = string.Format(@"{0}\{1}", buildDirectory, (isBlankIndex) ? ".blk" : ".000");
             bool isBlank = !buildPath.Contains(".000");
 
             OnTotalMaxDetermined(new TotalMaxArgs(1));
@@ -299,47 +305,6 @@ namespace DataCore
         }
 
         /// <summary>
-        /// Saves the provided blankIndex into a ready to use data.blk index
-        /// </summary>
-        /// <param name="blankIndex">Reference to data.blk</param>
-        /// <param name="buildPath"></param>
-        /// <param name="encodeNames">Determines if the fileNames in index should be encoded</param>
-        public void Save(ref List<BlankIndexEntry> blankIndex, string buildPath, bool encodeNames)
-        {
-            OnTotalMaxDetermined(new TotalMaxArgs(1));
-            OnTotalProgressChanged(new TotalChangedArgs(1, "Saving data.lgy..."));
-
-            if (File.Exists(buildPath)) { File.Delete(buildPath); }
-
-            using (BinaryWriter bw = new BinaryWriter(File.Create(buildPath), encoding))
-            {
-                byte b = 0;
-
-                OnCurrentMaxDetermined(new CurrentMaxArgs(blankIndex.Count));
-
-                for (int idx = 0; idx < blankIndex.Count; idx++)
-                {
-                    BlankIndexEntry blankIndexEntry = blankIndex[idx];
-
-                    OnCurrentProgressChanged(new CurrentChangedArgs(idx, ""));
-
-                    string name = (encodeNames) ? StringCipher.Encode(blankIndexEntry.PreviousName) : blankIndexEntry.PreviousName;
-                    byte[] buffer = new byte[] { Convert.ToByte(name.Length) };
-                    XOR.Cipher(ref buffer, ref b);
-                    bw.Write(buffer);
-                    byte[] bytes = Encoding.Default.GetBytes(name);
-                    XOR.Cipher(ref bytes, ref b);
-                    bw.Write(bytes);
-                    byte[] array = new byte[8];
-                    Buffer.BlockCopy(BitConverter.GetBytes(blankIndexEntry.Offset), 0, array, 0, 4);
-                    Buffer.BlockCopy(BitConverter.GetBytes(blankIndexEntry.AvailableSpace), 0, array, 4, 4);
-                    XOR.Cipher(ref array, ref b);
-                    bw.Write(array);
-                }
-            }
-        }
-
-        /// <summary>
         /// Reorders references index by sortType
         /// </summary>
         /// <param name="index">Reference to data.000 index</param>
@@ -370,9 +335,13 @@ namespace DataCore
         /// Returns an IndexEntry based on it's [UNHASHED] name
         /// </summary>
         /// <param name="index">Reference to data.000 index</param>
-        /// <param name="name">[UNHASHED] file name being searched for</param>
+        /// <param name="inName">File name being searched for</param>
         /// <returns>IndexEntry of name</returns>
-        public IndexEntry GetEntry(ref List<IndexEntry> index, string name) { return index.Find(i => i.Name == name); }
+        public IndexEntry GetEntry(ref List<IndexEntry> index, string inName)
+        {
+            string name = (StringCipher.IsEncoded(inName)) ? StringCipher.Decode(inName) : inName;
+            return index.Find(i => i.Name == name);
+        }
 
         /// <summary>
         /// Returns an IndexEntry based on it's dataId and offset
@@ -556,38 +525,205 @@ namespace DataCore
         #region File Methods
 
         /// <summary>
-        /// Gets the collection of bytes that represents a physical file inside the data.xxx storage system
+        /// Generates an SHA512 hash for the given fileName by locating the bytes in data.XXX storage
+        /// </summary>
+        /// <param name="index">Reference to loaded data.000 index</param>
+        /// <param name="dataDirectory">Location of the data.xxx files</param>
+        /// <param name="fileName">Name of the file to generate hash for</param>
+        /// <returns>SHA512 Hash String</returns>
+        public string GetFileSHA512(ref List<IndexEntry> index, string dataDirectory, string fileName)
+        {
+            int dataId = GetID(fileName, StringCipher.IsEncoded(fileName));
+
+            if (dataId > 0)
+            {
+                string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, dataId);
+
+                if (File.Exists(dataPath))
+                {
+                    byte[] buffer = null;
+                    IndexEntry fileEntry = GetEntry(ref index, fileName);
+
+                    if (fileEntry != null)
+                    {
+                        using (FileStream dataFS = new FileStream(dataPath, FileMode.Open, FileAccess.Read))
+                        {
+                            dataFS.Position = fileEntry.Offset;
+                            buffer = new byte[fileEntry.Length];
+                            dataFS.Read(buffer, 0, buffer.Length);
+
+                            if (buffer.Length > 0)
+                            {
+                                string ext = Path.GetExtension(fileName).Remove(0, 1).ToLower();
+                                if (XOR.Encrypted(ext)) { byte b = 0; XOR.Cipher(ref buffer, ref b); }
+
+                                string hash = Hash.GetSHA512Hash(buffer, buffer.Length);
+                                
+                                if (!string.IsNullOrEmpty(hash))
+                                {
+                                    buffer = null;
+                                    return hash;
+                                }
+                                else { OnError(new ErrorArgs(string.Format(@"Failed to generate hash for: {0}", fileName))); }
+                            }
+                            else { OnError(new ErrorArgs("[GetFileSHA512] Failed to read file into buffer!")); }
+                        }
+                    }
+                    else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] Failed to locate entry for: {0}", fileName))); }
+                }
+                else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] Cannot locate: {0}", dataPath)); }
+            }
+            else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] dataId is 0!\nPerhaps file: {0} doesn't exist!", fileName)); }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Generates an SHA512 hash for the file at given offset and length
         /// </summary>
         /// <param name="dataDirectory">Location of the data.xxx files</param>
+        /// <param name="dataId">Data.xxx id (e.g. 1-8)</param>
+        /// <param name="offset">Start of the file in dataId</param>
+        /// <param name="length">Length of the file in dataId</param>
         /// <param name="fileExt">Extension of the file</param>
-        /// <param name="dataId">ID of the data.xxx file to be loaded</param>
-        /// <param name="offset">Offset of the file being gathered</param>
-        /// <param name="length">Length of the file being gathered</param>
-        /// <returns>Populated byte array</returns>
-        public byte[] GetFileBytes(string dataDirectory, string fileExt, int dataId, long offset, int length)
+        /// <returns>SHA512 Hash String</returns>
+        public string GetFileSHA512(string dataDirectory, int dataId, long offset, int length, string fileExt)
         {
-            string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, dataId);
-
-            if (File.Exists(dataPath))
+            if (dataId > 0)
             {
-                byte[] outBuffer = null;
+                string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, dataId);
 
-                using (FileStream dataFS = new FileStream(dataPath, FileMode.Open, FileAccess.Read))
+                if (File.Exists(dataPath))
                 {
-                    dataFS.Position = offset;
-                    outBuffer = new byte[length];
-                    dataFS.Read(outBuffer, 0, length);
-                    
-                    if (outBuffer.Length > 0)
-                    {
-                        // If needed unencrypt the data (fileBytes buffer)
-                        if (XOR.Encrypted(fileExt)) { byte b = 0; XOR.Cipher(ref outBuffer, ref b); }
+                    byte[] buffer = null;
 
-                        return outBuffer;
+                    using (FileStream dataFS = new FileStream(dataPath, FileMode.Open, FileAccess.Read))
+                    {
+                        dataFS.Position = offset;
+                        buffer = new byte[length];
+                        dataFS.Read(buffer, 0, buffer.Length);
+
+                        if (buffer.Length > 0)
+                        {
+                            if (XOR.Encrypted(fileExt)) { byte b = 0; XOR.Cipher(ref buffer, ref b); }
+
+                            string hash = Hash.GetSHA512Hash(buffer, buffer.Length);
+
+                            if (!string.IsNullOrEmpty(hash))
+                            {
+                                buffer = null;
+                                return hash;
+                            }
+                            else { OnError(new ErrorArgs(string.Format(@"Failed to generate hash for file @ offset: {0} with length: {1}", offset, length))); }
+                        }
+                        else { OnError(new ErrorArgs("[GetFileSHA512] Failed to read file into buffer!")); }
                     }
                 }
+                else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] Cannot locate: {0}", dataPath)); }
             }
-            else { OnError(new ErrorArgs(string.Format("[GetFileBytes] Cannot locate: {0}", dataPath))); }
+            else { OnError(new ErrorArgs("[GetFileSHA512] dataId is 0!\nPerhaps file doesn't exist!")); }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Generates an MD5 hash for the given fileName by locating the bytes in data.XXX storage
+        /// </summary>
+        /// <param name="index">Reference to loaded data.000 index</param>
+        /// <param name="dataDirectory">Location of the data.xxx files</param>
+        /// <param name="fileName">Name of the file to generate hash for</param>
+        /// <returns>MD5 Hash String</returns>
+        public string GetFileMD5(ref List<IndexEntry> index, string dataDirectory, string fileName)
+        {
+            int dataId = GetID(fileName, StringCipher.IsEncoded(fileName));
+
+            if (dataId > 0)
+            {
+                string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, dataId);
+
+                if (File.Exists(dataPath))
+                {
+                    byte[] buffer = null;
+                    IndexEntry fileEntry = GetEntry(ref index, fileName);
+
+                    if (fileEntry != null)
+                    {
+                        using (FileStream dataFS = new FileStream(dataPath, FileMode.Open, FileAccess.Read))
+                        {
+                            dataFS.Position = fileEntry.Offset;
+                            buffer = new byte[fileEntry.Length];
+                            dataFS.Read(buffer, 0, buffer.Length);
+
+                            if (buffer.Length > 0)
+                            {
+                                string ext = Path.GetExtension(fileName).Remove(0, 1).ToLower();
+                                if (XOR.Encrypted(ext)) { byte b = 0; XOR.Cipher(ref buffer, ref b); }
+
+                                string hash = Hash.GetMD5Hash(buffer, buffer.Length);
+
+                                if (!string.IsNullOrEmpty(hash))
+                                {
+                                    buffer = null;
+                                    return hash;
+                                }
+                                else { OnError(new ErrorArgs(string.Format(@"Failed to generate hash for: {0}", fileName))); }
+                            }
+                            else { OnError(new ErrorArgs("[GetFileMD5] Failed to read file into buffer!")); }
+                        }
+                    }
+                    else { OnError(new ErrorArgs(string.Format(@"[GetFileMD5] Failed to locate entry for: {0}", fileName))); }
+                }
+                else { OnError(new ErrorArgs(string.Format(@"[GetFileMD5] Cannot locate: {0}", dataPath)); }
+            }
+            else { OnError(new ErrorArgs(string.Format(@"[GetFileMD5] dataId is 0!\nPerhaps file: {0} doesn't exist!", fileName)); }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Generates an MD5 hash for the file at given offset and length
+        /// </summary>
+        /// <param name="dataDirectory">Location of the data.xxx files</param>
+        /// <param name="dataId">Data.xxx id (e.g. 1-8)</param>
+        /// <param name="offset">Start of the file in dataId</param>
+        /// <param name="length">Length of the file in dataId</param>
+        /// <param name="fileExt">Extension of the file</param>
+        /// <returns>SHA512 Hash String</returns>
+        public string GetFileMD5(string dataDirectory, int dataId, long offset, int length, string fileExt)
+        {
+            if (dataId > 0)
+            {
+                string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, dataId);
+
+                if (File.Exists(dataPath))
+                {
+                    byte[] buffer = null;
+
+                    using (FileStream dataFS = new FileStream(dataPath, FileMode.Open, FileAccess.Read))
+                    {
+                        dataFS.Position = offset;
+                        buffer = new byte[length];
+                        dataFS.Read(buffer, 0, buffer.Length);
+
+                        if (buffer.Length > 0)
+                        {
+                            if (XOR.Encrypted(fileExt)) { byte b = 0; XOR.Cipher(ref buffer, ref b); }
+
+                            string hash = Hash.GetMD5Hash(buffer, buffer.Length);
+
+                            if (!string.IsNullOrEmpty(hash))
+                            {
+                                buffer = null;
+                                return hash;
+                            }
+                            else { OnError(new ErrorArgs(string.Format(@"Failed to generate hash for file @ offset: {0} with length: {1}", offset, length))); }
+                        }
+                        else { OnError(new ErrorArgs("[GetFileMD5] Failed to read file into buffer!")); }
+                    }
+                }
+                else { OnError(new ErrorArgs(string.Format(@"[GetFileMD5] Cannot locate: {0}", dataPath)); }
+            }
+            else { OnError(new ErrorArgs("[GetFileMD5] dataId is 0!\nPerhaps file doesn't exist!")); }
 
             return null;
         }
