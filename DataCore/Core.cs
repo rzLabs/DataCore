@@ -571,9 +571,9 @@ namespace DataCore
                     }
                     else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] Failed to locate entry for: {0}", fileName))); }
                 }
-                else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] Cannot locate: {0}", dataPath))); }
+                else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] Cannot locate: {0}", dataPath)); }
             }
-            else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] dataId is 0!\nPerhaps file: {0} doesn't exist!", fileName))); }
+            else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] dataId is 0!\nPerhaps file: {0} doesn't exist!", fileName)); }
 
             return null;
         }
@@ -619,7 +619,7 @@ namespace DataCore
                         else { OnError(new ErrorArgs("[GetFileSHA512] Failed to read file into buffer!")); }
                     }
                 }
-                else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] Cannot locate: {0}", dataPath))); }
+                else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] Cannot locate: {0}", dataPath)); }
             }
             else { OnError(new ErrorArgs("[GetFileSHA512] dataId is 0!\nPerhaps file doesn't exist!")); }
 
@@ -673,9 +673,9 @@ namespace DataCore
                     }
                     else { OnError(new ErrorArgs(string.Format(@"[GetFileMD5] Failed to locate entry for: {0}", fileName))); }
                 }
-                else { OnError(new ErrorArgs(string.Format(@"[GetFileMD5] Cannot locate: {0}", dataPath))); }
+                else { OnError(new ErrorArgs(string.Format(@"[GetFileMD5] Cannot locate: {0}", dataPath)); }
             }
-            else { OnError(new ErrorArgs(string.Format(@"[GetFileMD5] dataId is 0!\nPerhaps file: {0} doesn't exist!", fileName))); }
+            else { OnError(new ErrorArgs(string.Format(@"[GetFileMD5] dataId is 0!\nPerhaps file: {0} doesn't exist!", fileName)); }
 
             return null;
         }
@@ -721,7 +721,7 @@ namespace DataCore
                         else { OnError(new ErrorArgs("[GetFileMD5] Failed to read file into buffer!")); }
                     }
                 }
-                else { OnError(new ErrorArgs(string.Format(@"[GetFileMD5] Cannot locate: {0}", dataPath))); }
+                else { OnError(new ErrorArgs(string.Format(@"[GetFileMD5] Cannot locate: {0}", dataPath)); }
             }
             else { OnError(new ErrorArgs("[GetFileMD5] dataId is 0!\nPerhaps file doesn't exist!")); }
 

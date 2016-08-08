@@ -46,7 +46,6 @@
     <Compile Include="Core.cs" />
     <Compile Include="Enums.cs" />
     <Compile Include="Functions\Extensions.cs" />
-    <Compile Include="Functions\Hash.cs" />
     <Compile Include="Functions\StringCipher.cs" />
     <Compile Include="Functions\XOR.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
