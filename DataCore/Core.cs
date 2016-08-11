@@ -146,7 +146,7 @@ namespace DataCore
                         {
                             Name = Path.GetFileName(directoryFiles[directoryFileIdx]),
                             Length = (int)new FileInfo(directoryFiles[directoryFileIdx]).Length,
-                            DataID = GetID(Path.GetFileName(directoryFiles[directoryFileIdx]), false),
+                            DataID = GetID(Path.GetFileName(directoryFiles[directoryFileIdx])),
                             Offset = 0
                         });
                     }
@@ -182,7 +182,7 @@ namespace DataCore
                     Name = fileInfo.Name,
                     Offset = 0,
                     Length = (int)fileInfo.Length,
-                    DataID = GetID(fileInfo.Name, false)
+                    DataID = GetID(fileInfo.Name)
                 });
             }
 
@@ -232,7 +232,7 @@ namespace DataCore
                         dataIndexEntry.Name = (decodeNames) ? StringCipher.Decode(Encoding.Default.GetString(bytes)) : Encoding.Default.GetString(bytes);
                         dataIndexEntry.Offset = BitConverter.ToInt32(value, 0);
                         dataIndexEntry.Length = BitConverter.ToInt32(value, 4);
-                        dataIndexEntry.DataID = GetID(Encoding.Default.GetString(bytes), true);
+                        dataIndexEntry.DataID = GetID(Encoding.Default.GetString(bytes));
                         index.Add(dataIndexEntry);
 
                         if ((ms.Position - lastCount) >= reportInterval)
@@ -258,8 +258,9 @@ namespace DataCore
         /// Saves the provided indexList into a ready to use data.000 index
         /// </summary>
         /// <param name="index">Reference to data.000 index</param>
-        /// <param name="buildPath">Location to build the new data.000 at</param>
+        /// <param name="buildDirectory">Location to build the new data.000 at</param>
         /// <param name="encodeNames">Determines if the fileNames in index should be encoded</param>
+        /// <param name="isBlankIndex">Determines if the index is a Blank Space Index</param>
         /// <returns>bool value indicating success or failure</returns>
         /// TODO: UPDATE PATH!
         public void Save(ref List<IndexEntry> index, string buildDirectory, bool isBlankIndex, bool encodeNames)
@@ -335,13 +336,9 @@ namespace DataCore
         /// Returns an IndexEntry based on it's [UNHASHED] name
         /// </summary>
         /// <param name="index">Reference to data.000 index</param>
-        /// <param name="inName">File name being searched for</param>
+        /// <param name="name">File name being searched for</param>
         /// <returns>IndexEntry of name</returns>
-        public IndexEntry GetEntry(ref List<IndexEntry> index, string inName)
-        {
-            string name = (StringCipher.IsEncoded(inName)) ? StringCipher.Decode(inName) : inName;
-            return index.Find(i => i.Name == name);
-        }
+        public IndexEntry GetEntry(ref List<IndexEntry> index, string name) { return index.Find(i => i.Name == name); }
 
         /// <summary>
         /// Returns an IndexEntry based on it's dataId and offset
@@ -533,7 +530,7 @@ namespace DataCore
         /// <returns>SHA512 Hash String</returns>
         public string GetFileSHA512(ref List<IndexEntry> index, string dataDirectory, string fileName)
         {
-            int dataId = GetID(fileName, StringCipher.IsEncoded(fileName));
+            int dataId = GetID(fileName);
 
             if (dataId > 0)
             {
@@ -635,7 +632,7 @@ namespace DataCore
         /// <returns>MD5 Hash String</returns>
         public string GetFileMD5(ref List<IndexEntry> index, string dataDirectory, string fileName)
         {
-            int dataId = GetID(fileName, StringCipher.IsEncoded(fileName));
+            int dataId = GetID(fileName);
 
             if (dataId > 0)
             {
@@ -741,7 +738,7 @@ namespace DataCore
         /// <param name="chunkSize">Size (in bytes) to process each iteration of the write loop</param>
         public void ExportFileEntry(string dataDirectory, string buildPath, long offset, int length, int chunkSize)
         {
-            string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, GetID(Path.GetFileName(buildPath), false));
+            string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, GetID(Path.GetFileName(buildPath)));
 
             if (File.Exists(dataPath))
             {
@@ -911,7 +908,7 @@ namespace DataCore
             else { fileExt = Path.GetExtension(fileName.Remove(0, 1)); }
 
             // Determine the path to the current files appropriate data.xxx
-            string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, GetID(fileName, isEncoded));
+            string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, GetID(fileName));
 
             // If the physical data.xxx actually exists
             if (File.Exists(dataPath))
@@ -1002,7 +999,7 @@ namespace DataCore
             else { fileExt = Path.GetExtension(fileName.Remove(0, 1)); }
 
             // Determine the path to the current files appropriate data.xxx
-            string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, GetID(fileName, isEncoded));
+            string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, GetID(fileName));
 
             // If the physical data.xxx actually exists
             if (File.Exists(dataPath))
@@ -1107,7 +1104,7 @@ namespace DataCore
                     if (originalEntry != null)
                     {
                         // Determine the path to the current files appropriate data.xxx
-                        string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, GetID(currentEntry.Name, false));
+                        string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, GetID(currentEntry.Name));
 
                         if (File.Exists(dataPath))
                         {
@@ -1194,7 +1191,7 @@ namespace DataCore
                 string fileName = Path.GetFileName(filePath);
                 string fileExt = Path.GetExtension(fileName).Remove(0,1);
                 long fileLen = new FileInfo(filePath).Length;
-                int dataId = GetID(fileName, false);
+                int dataId = GetID(fileName);
 
                 OnCurrentMaxDetermined(new CurrentMaxArgs(fileLen));
 
@@ -1519,10 +1516,10 @@ namespace DataCore
         /// <param name="name">Hashed/Unhashed name being searched</param>
         /// <param name="isHashed">Determines if name is hashed or not</param>
         /// <returns>Data.00x id</returns>
-        public int GetID(string name, bool isHashed)
+        public int GetID(string name)
         {
             byte[] bytes;
-            if (isHashed) { bytes = encoding.GetBytes(name.ToLower()); }
+            if (StringCipher.IsEncoded(name)) { bytes = encoding.GetBytes(name.ToLower()); }
             else { bytes = encoding.GetBytes(StringCipher.Encode(name).ToLower()); }
             int num = 0;
             for (int i = 0; i < bytes.Length; i++)
@@ -1535,6 +1532,13 @@ namespace DataCore
             }
             return num % 8 + 1;
         }
+
+        /// <summary>
+        /// Determines if the provided name is currently encoded
+        /// </summary>
+        /// <param name="name">File name to check</param>
+        /// <returns></returns>
+        public bool IsEncoded(string name) { return StringCipher.IsEncoded(name); }
 
         /// <summary>
         /// Encodes provided name [UNHASHED]
