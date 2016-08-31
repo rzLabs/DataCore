@@ -265,7 +265,7 @@ namespace DataCore
         /// TODO: UPDATE PATH!
         public void Save(ref List<IndexEntry> index, string buildDirectory, bool isBlankIndex, bool encodeNames)
         {
-            string buildPath = string.Format(@"{0}\{1}", buildDirectory, (isBlankIndex) ? ".blk" : ".000");
+            string buildPath = string.Format(@"{0}\data.{1}", buildDirectory, (isBlankIndex) ? ".blk" : ".000");
             bool isBlank = !buildPath.Contains(".000");
 
             OnTotalMaxDetermined(new TotalMaxArgs(1));
@@ -283,7 +283,8 @@ namespace DataCore
                 {
                     IndexEntry indexEntry = index[idx];
 
-                    OnCurrentProgressChanged(new CurrentChangedArgs(idx, ""));
+                    int lastIdx = 0;
+                    if (lastIdx - idx > 64000) { OnCurrentProgressChanged(new CurrentChangedArgs(idx, "")); }
 
                     string name = (encodeNames) ? StringCipher.Encode(indexEntry.Name) : indexEntry.Name;
                     byte[] buffer = new byte[] { Convert.ToByte(name.Length) };
@@ -895,17 +896,18 @@ namespace DataCore
         {
             // Define some temporary information about the file being imported
             string fileName = Path.GetFileName(filePath);
-            string decodedFileName = string.Empty;
             string fileExt;
 
             // Check if fileName is encoded and decode (if needed) and determine fileName's extension
-            bool isEncoded = StringCipher.IsEncoded(fileName);
-            if (isEncoded)
+            bool isEncoded = StringCipher.IsEncoded(index[0].Name);
+            if (!isEncoded)
             {
-                decodedFileName = StringCipher.Decode(fileName);
-                fileExt = Path.GetExtension(decodedFileName.Remove(0, 1));
+                fileName = StringCipher.Decode(fileName);
+                fileExt = Path.GetExtension(fileName.Remove(0, 1));
             }
             else { fileExt = Path.GetExtension(fileName.Remove(0, 1)); }
+
+            //OnWarning(new WarningArgs(string.Format("IsEncoded: {0} | fileName: {1}", isEncoded.ToString(), index[0].Name)));
 
             // Determine the path to the current files appropriate data.xxx
             string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, GetID(fileName));
@@ -913,6 +915,8 @@ namespace DataCore
             // If the physical data.xxx actually exists
             if (File.Exists(dataPath))
             {
+                //OnWarning(new WarningArgs(string.Format("FileName: {0}", fileName)));
+
                 // Find the matching entry for the file (if existing)
                 IndexEntry indexEntry = index.Find(i => i.Name == fileName);
 
