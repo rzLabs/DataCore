@@ -17,14 +17,20 @@ using DataCore.Structures;
 /// TODO: Update method UpdateFileEntry/UpdateFileEntries to store updated file (whose new file gets appended) to data.blk
 /// TODO: Add overridable (during construction?) validExt list
 /// TODO: Add support for loading / displaying / saving data.blk
+/// TODO: Add RebuildDataFile() method (will load file from data.xxx and write it directly into new data.xxx)
 namespace DataCore
 {
+    // TODO: Add 'RemoveDuplicates' (ascii/non-ascii) <reduce client size?>
+    // TODO: Add 'RebuildDataFile' function
+    // TODO: Add 'CompareFiles' function (to compare external file with data file)
+
     /// <summary>
     /// Provides interactive access to the Rappelz Data.XXX File Management System
     /// </summary>
     public class Core
     {
-        internal bool NamesHashed = false;
+        public bool NamesEncoded = false;
+        protected bool makeBackups = false;
 
         /// <summary>
         /// Defines the encoding of files to be the default of the system
@@ -33,17 +39,20 @@ namespace DataCore
         internal readonly Encoding encoding = Encoding.Default;
 
         #region Events
+        public event EventHandler<ConsoleMessageArgs> MessageOccured;
         public event EventHandler<ErrorArgs> ErrorOccured;
         public event EventHandler<WarningArgs> WarningOccured;
         public event EventHandler<TotalMaxArgs> TotalMaxDetermined;
         public event EventHandler<TotalChangedArgs> TotalProgressChanged;
-        public event EventHandler TotalProgressReset;
+        public event EventHandler<TotalResetArgs> TotalProgressReset;
         public event EventHandler<CurrentMaxArgs> CurrentMaxDetermined;
         public event EventHandler<CurrentChangedArgs> CurrentProgressChanged;
-        public event EventHandler CurrentProgressReset;
+        public event EventHandler<CurrentResetArgs> CurrentProgressReset;
         #endregion
 
         #region Event Delegates
+
+        protected void OnMessage(ConsoleMessageArgs c) { MessageOccured?.Invoke(this, c); }
 
         /// <summary>
         /// Raises an event that informs the caller of an error that has occured
@@ -75,7 +84,7 @@ namespace DataCore
         /// Raises an event that informs the caller that the TotalProgressbar should be reset to 0
         /// </summary>
         /// <param name="e">Dummy EventArg</param>
-        protected void OnTotalProgressReset(EventArgs e) { TotalProgressReset?.Invoke(this, e); }
+        protected void OnTotalProgressReset(TotalResetArgs e) { TotalProgressReset?.Invoke(this, e); }
 
         /// <summary>
         /// Raises an event that informs caller of CurrentProgress operations total
@@ -94,7 +103,7 @@ namespace DataCore
         /// Raises an event that informs the caller that the CurrentProgressbar should be reset to 0
         /// </summary>
         /// <param name="e">Dummy EventArg</param>
-        protected void OnCurrentProgressReset(EventArgs e) { CurrentProgressReset?.Invoke(this, e); }
+        protected void OnCurrentProgressReset(CurrentResetArgs e) { CurrentProgressReset?.Invoke(this, e); }
 
         #endregion
 
@@ -111,6 +120,14 @@ namespace DataCore
         /// <param name="overrideEncoding">Encoding to be used during operation</param>
         public Core(Encoding overrideEncoding) { encoding = overrideEncoding; }
 
+        public Core(bool backup) { makeBackups = backup; }
+
+        public Core(Encoding overrideEncoding, bool backup)
+        {
+            makeBackups = backup;
+            encoding = overrideEncoding;
+        }
+
         #endregion
 
         #region Data.000/BLK Methods
@@ -125,7 +142,7 @@ namespace DataCore
         /// <returns>Populated data.000 index</returns>
         public List<IndexEntry> Create(string dumpDirectory)
         {
-            OnTotalMaxDetermined(new TotalMaxArgs(1));
+            OnTotalMaxDetermined(new TotalMaxArgs(1, true));
             OnTotalProgressChanged(new TotalChangedArgs(0, "Creating new data.000..."));
 
             List<IndexEntry> index = new List<IndexEntry>();
@@ -154,7 +171,8 @@ namespace DataCore
 
                 OnTotalProgressChanged(new TotalChangedArgs(1, ""));
 
-                OnCurrentProgressReset(EventArgs.Empty);
+                OnTotalProgressReset(new TotalResetArgs(false));
+                OnCurrentProgressReset(new CurrentResetArgs(true));
 
                 return index;
             }
@@ -177,13 +195,14 @@ namespace DataCore
             foreach (string filePath in filePaths)
             {
                 FileInfo fileInfo = new FileInfo(filePath);
-                tempIndex.Add(new IndexEntry
+                IndexEntry indexEntry = new IndexEntry
                 {
-                    Name = fileInfo.Name,
+                    Name = indexName(fileInfo.Name),
                     Offset = 0,
                     Length = (int)fileInfo.Length,
                     DataID = GetID(fileInfo.Name)
-                });
+                };
+                tempIndex.Add(indexEntry);
             }
 
             return tempIndex;
@@ -210,9 +229,6 @@ namespace DataCore
             {
                 using (var ms = new MemoryStream(File.ReadAllBytes(path)))
                 {
-                    OnTotalMaxDetermined(new TotalMaxArgs(1));
-                    OnTotalProgressChanged(new TotalChangedArgs(1, string.Format("Indexing data.{0}...", (isBlank) ? "blk" : "000")));
-
                     OnCurrentMaxDetermined(new CurrentMaxArgs(ms.Length));
 
                     while (ms.Position < ms.Length)
@@ -242,12 +258,10 @@ namespace DataCore
                         }
                     }
 
-                    OnCurrentProgressReset(EventArgs.Empty);
+                    OnCurrentProgressReset(new CurrentResetArgs(true));
                 }
 
-                OnTotalProgressReset(EventArgs.Empty);
-
-                NamesHashed = !decodeNames;
+                NamesEncoded = !decodeNames;
             }
             else { OnError(new ErrorArgs(string.Format("[Load] Cannot find data.000 at path: {0}", path))); }
 
@@ -259,19 +273,19 @@ namespace DataCore
         /// </summary>
         /// <param name="index">Reference to data.000 index</param>
         /// <param name="buildDirectory">Location to build the new data.000 at</param>
-        /// <param name="encodeNames">Determines if the fileNames in index should be encoded</param>
         /// <param name="isBlankIndex">Determines if the index is a Blank Space Index</param>
         /// <returns>bool value indicating success or failure</returns>
         /// TODO: UPDATE PATH!
-        public void Save(ref List<IndexEntry> index, string buildDirectory, bool isBlankIndex, bool encodeNames)
+        public void Save(ref List<IndexEntry> index, string buildDirectory, bool isBlankIndex)
         {
-            string buildPath = string.Format(@"{0}\data.{1}", buildDirectory, (isBlankIndex) ? ".blk" : ".000");
+            string buildPath = string.Format(@"{0}\data.{1}", buildDirectory, (isBlankIndex) ? "blk" : "000");
             bool isBlank = !buildPath.Contains(".000");
 
-            OnTotalMaxDetermined(new TotalMaxArgs(1));
-            OnTotalProgressChanged(new TotalChangedArgs(0, string.Format("Saving index.{0}...", (isBlank) ? "blk" : "000")));
+            if (makeBackups) { createBackup(buildPath, 64000); }
 
             if (File.Exists(buildPath)) { File.Delete(buildPath); }
+
+            long lastCount = 0;
 
             using (BinaryWriter bw = new BinaryWriter(File.Create(buildPath), Encoding.Default))
             {
@@ -286,7 +300,7 @@ namespace DataCore
                     int lastIdx = 0;
                     if (lastIdx - idx > 64000) { OnCurrentProgressChanged(new CurrentChangedArgs(idx, "")); }
 
-                    string name = (encodeNames) ? StringCipher.Encode(indexEntry.Name) : indexEntry.Name;
+                    string name = IsEncoded(indexEntry.Name) ? indexEntry.Name : EncodeName(indexEntry.Name);
                     byte[] buffer = new byte[] { Convert.ToByte(name.Length) };
                     XOR.Cipher(ref buffer, ref b);
                     bw.Write(buffer);
@@ -298,12 +312,16 @@ namespace DataCore
                     Buffer.BlockCopy(BitConverter.GetBytes(indexEntry.Length), 0, array, 4, 4);
                     XOR.Cipher(ref array, ref b);
                     bw.Write(array);
+
+                    if ((idx - lastCount) >= 64000)
+                    {
+                        OnCurrentProgressChanged(new CurrentChangedArgs(idx, ""));
+                        lastCount = idx;
+                    }
                 }
 
-                OnCurrentProgressReset(EventArgs.Empty);
+                OnCurrentProgressReset(new CurrentResetArgs(true));
             }
-
-            OnTotalProgressReset(EventArgs.Empty);
         }
 
         /// <summary>
@@ -508,7 +526,11 @@ namespace DataCore
         /// </summary>
         /// <param name="index">Index to be altered</param>
         /// <param name="name">Name of file entry to be deleted</param>
-        public void DeleteEntryByName(ref List<IndexEntry> index, string name) { index.Remove(index.Find(i => i.Name == name)); }
+        public void DeleteEntryByName(ref List<IndexEntry> index, string fileName, string dataDirectory, int dataId, long offset, long length, int chunkSize)
+        {
+            DeleteFileEntry(dataDirectory, dataId, offset, length, chunkSize);
+            index.Remove(index.Find(i => i.Name == fileName));
+        }
 
         /// <summary>
         /// Removes a single entry bearing DataID = id and Offset = offset from referenced data.000 index
@@ -531,6 +553,8 @@ namespace DataCore
         /// <returns>SHA512 Hash String</returns>
         public string GetFileSHA512(ref List<IndexEntry> index, string dataDirectory, string fileName)
         {
+            string name = indexName(fileName);
+
             int dataId = GetID(fileName);
 
             if (dataId > 0)
@@ -540,7 +564,7 @@ namespace DataCore
                 if (File.Exists(dataPath))
                 {
                     byte[] buffer = null;
-                    IndexEntry fileEntry = GetEntry(ref index, fileName);
+                    IndexEntry fileEntry = GetEntry(ref index, name);
 
                     if (fileEntry != null)
                     {
@@ -552,7 +576,7 @@ namespace DataCore
 
                             if (buffer.Length > 0)
                             {
-                                string ext = Path.GetExtension(fileName).Remove(0, 1).ToLower();
+                                string ext = IsEncoded(name) ? Path.GetExtension(DecodeName(name)).Remove(0, 1).ToLower() : Path.GetExtension(name).Remove(0, 1);
                                 if (XOR.Encrypted(ext)) { byte b = 0; XOR.Cipher(ref buffer, ref b); }
 
                                 string hash = Hash.GetSHA512Hash(buffer, buffer.Length);
@@ -562,16 +586,16 @@ namespace DataCore
                                     buffer = null;
                                     return hash;
                                 }
-                                else { OnError(new ErrorArgs(string.Format(@"Failed to generate hash for: {0}", fileName))); }
+                                else { OnError(new ErrorArgs(string.Format(@"Failed to generate hash for: {0}", name))); }
                             }
                             else { OnError(new ErrorArgs("[GetFileSHA512] Failed to read file into buffer!")); }
                         }
                     }
-                    else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] Failed to locate entry for: {0}", fileName))); }
+                    else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] Failed to locate entry for: {0}", name))); }
                 }
                 else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] Cannot locate: {0}", dataPath))); }
             }
-            else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] dataId is 0!\nPerhaps file: {0} doesn't exist!", fileName))); }
+            else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] dataId is 0!\nPerhaps file: {0} doesn't exist!", name))); }
 
             return null;
         }
@@ -757,10 +781,13 @@ namespace DataCore
                 // IF the buffer actually contains data
                 if (outBuffer.Length > 0)
                 {
-                    OnTotalMaxDetermined(new TotalMaxArgs(length));
+                    string fileName = Path.GetFileName(buildPath);
+                    if (IsEncoded(fileName)) { fileName = DecodeName(fileName); }
+
+                    OnCurrentMaxDetermined(new CurrentMaxArgs(length));
 
                     // Determine the files extension
-                    fileExt = Path.GetExtension(buildPath).Remove(0,1).ToLower();
+                     fileExt = Path.GetExtension(fileName).Remove(0,1).ToLower();
 
                     // If the file has a valid extension (e.g. .dds)
                     if (Extensions.IsValid(fileExt))
@@ -778,17 +805,18 @@ namespace DataCore
                                 for (int byteCount = 0; byteCount < length; byteCount += Math.Min(length - byteCount, chunkSize))
                                 {
                                     bw.Write(outBuffer, byteCount, Math.Min(length - byteCount, chunkSize));
-                                    OnTotalProgressChanged(new TotalChangedArgs(byteCount, ""));
+                                    OnCurrentProgressChanged(new CurrentChangedArgs(byteCount, ""));
                                 }
                             }
                         }
+
+                        OnCurrentProgressReset(new CurrentResetArgs(true));
                     }
                     else { OnWarning(new WarningArgs(string.Format("[ExportFileEntry] Skipping entry {0} with malformed extension {1}", Path.GetFileName(buildPath), fileExt))); }
                 }
                 else { OnError(new ErrorArgs("[ExportFileEntry] Failed to buffer file for export!")); }
 
                 outBuffer = null;
-                OnTotalProgressReset(EventArgs.Empty);
             }
             else { OnError(new ErrorArgs(string.Format("[ExportFileEntry] Cannot locate: {0}", dataPath))); }
         }
@@ -802,7 +830,7 @@ namespace DataCore
         /// <param name="chunkSize">Size (in bytes) to process each iteration of the write loop</param>
         public void ExportFileEntries(ref List<IndexEntry> filteredIndex, string dataDirectory, string buildDirectory, int chunkSize)
         {
-            OnTotalMaxDetermined(new TotalMaxArgs(8));
+            OnTotalMaxDetermined(new TotalMaxArgs(8, true));
 
             // For each set of dataId files in the filteredIndex
             for (int dataId = 1; dataId <= 8; dataId++)
@@ -871,16 +899,16 @@ namespace DataCore
                                     outBuffer = null;
                                 }
                                 else { OnWarning(new WarningArgs(string.Format("[ExportFileEntries] Skipping entry {0} with malformed extension {1}", Path.GetFileName(buildPath), fileExt))); }
-                            }
 
-                            OnCurrentProgressReset(EventArgs.Empty);
+                                OnCurrentProgressReset(new CurrentResetArgs(true));
+                            }
                         }
                     }
                     else { OnError(new ErrorArgs(string.Format("[ExportFileEntries] Cannot locate: {0}", dataPath))); }
                 }
             }
 
-            OnTotalProgressReset(EventArgs.Empty);
+            OnTotalProgressReset(new TotalResetArgs(false));
 
             GC.Collect();
         }
@@ -968,7 +996,7 @@ namespace DataCore
                             fileBytes = null;
 
                             // Issue progress reset event
-                            OnCurrentProgressReset(EventArgs.Empty);
+                            OnCurrentProgressReset(new CurrentResetArgs(true));
                         }
                     }
                 }
@@ -1069,7 +1097,7 @@ namespace DataCore
                             fileBytes = null;
 
                             // Issue progress reset event
-                            OnCurrentProgressReset(EventArgs.Empty);
+                            OnCurrentProgressReset(new CurrentResetArgs(true));
                         }
                     }
                 }
@@ -1089,7 +1117,7 @@ namespace DataCore
         {
             List<IndexEntry> tempIndex = Create(filePaths);
 
-            OnTotalMaxDetermined(new TotalMaxArgs(8));
+            OnTotalMaxDetermined(new TotalMaxArgs(8, true));
 
             // Foreach dataId filter the referenced index
             for (int dataId = 1; dataId <= 8; dataId++)
@@ -1118,8 +1146,12 @@ namespace DataCore
                                 string fileExt = Path.GetExtension(fileName);
 
                                 // Define the file path to the file being processed
-                                string filePath = filePaths.ToList().Find(f => f.Contains(fileName));
-
+                                string filePath = null;
+                                bool filePathsEncoded = IsEncoded(Path.GetFileName(filePaths[0]));
+                                if (!IsEncoded(fileName) && filePathsEncoded) { filePath = filePaths.ToList().Find(f => f.Contains(EncodeName(fileName))); }
+                                else if (IsEncoded(fileName) && !filePathsEncoded) { filePath = filePaths.ToList().Find(f => f.Contains(DecodeName(fileName))); }
+                                else if (IsEncoded(fileName) && filePathsEncoded || !IsEncoded(fileName) && !filePathsEncoded) { filePath = filePaths.ToList().Find(f => f.Contains(fileName)); }
+                                
                                 // If the physical file exists
                                 if (File.Exists(filePath))
                                 {
@@ -1171,11 +1203,11 @@ namespace DataCore
                     }
                     else { OnError(new ErrorArgs(string.Format("[UpdateFileEntries] Cannot locate entry for {0} in referenced index", currentEntry.Name))); }
 
-                    OnCurrentProgressReset(EventArgs.Empty);
+                    OnCurrentProgressReset(new CurrentResetArgs(true));
                 }
             }
 
-            OnTotalProgressReset(EventArgs.Empty);
+            OnTotalProgressReset(new TotalResetArgs(false));
             GC.Collect();
         }
 
@@ -1193,7 +1225,7 @@ namespace DataCore
             {
                 // Define some information about the file
                 string fileName = Path.GetFileName(filePath);
-                string fileExt = Path.GetExtension(fileName).Remove(0,1);
+                string fileExt = IsEncoded(fileName) ? Path.GetExtension(DecodeName(fileName)).Remove(0, 1) : Path.GetExtension(fileName).Remove(0, 1);
                 long fileLen = new FileInfo(filePath).Length;
                 int dataId = GetID(fileName);
 
@@ -1208,6 +1240,8 @@ namespace DataCore
                     // If the data.xxx file exists
                     if (File.Exists(dataPath))
                     {
+                        if (makeBackups) { createBackup(dataPath, chunkSize); }
+
                         // Using a filestream open the data.xxx file with write access
                         using (FileStream fs = new FileStream(dataPath, FileMode.Open, FileAccess.Write))
                         {
@@ -1224,7 +1258,7 @@ namespace DataCore
                             if (XOR.Encrypted(fileExt)) { byte b = 0; XOR.Cipher(ref fileBytes, ref b); }
 
                             // If no chunkSize is provided, generate default
-                            if (chunkSize == 0) { chunkSize = Math.Max(64000, (int)(fileBytes.Length * .02)); }
+                            if (chunkSize == 0) { chunkSize = Math.Min(64000, (int)(fileBytes.Length * .02)); }
 
                             using (BinaryWriter bw = new BinaryWriter(fs, encoding))
                             {
@@ -1240,7 +1274,7 @@ namespace DataCore
                             // Add the new indexEntry to the referenced data.000 index
                             index.Add(new IndexEntry
                             {
-                                Name = fileName,
+                                Name = indexName(fileName),
                                 Offset = offset,
                                 Length = (int)fileLen,
                                 DataID = dataId
@@ -1255,177 +1289,31 @@ namespace DataCore
             }
             else { OnError(new ErrorArgs(string.Format("[ImportFileEntry] Cannot locate file: {0}", filePath))); }
 
-            OnCurrentProgressReset(EventArgs.Empty);
+            OnCurrentProgressReset(new CurrentResetArgs(true));
         }
 
         /// <summary>
-        /// Creates file entries that do not exist in the referenced data.000 index
+        /// Overwrites a previous files bytes with zeros in effect erasing it
         /// </summary>
-        /// <param name="index">Reference to data.000 index to be updated</param>
         /// <param name="dataDirectory">Location of the data.xxx files</param>
-        /// <param name="filePaths">Array of file paths of files to import</param>
-        /// <param name="chunkSize">Size (in bytes) to process each iteration of the write loop</param>
-        public void ImportFileEntries(ref List<IndexEntry> index, string dataDirectory, string[] filePaths, int chunkSize)
+        /// <param name="dataId">Id of the data.xxx file to be altered</param>
+        /// <param name="offset">Offset to begin writing zeros</param>
+        /// <param name="length">How far to write zeros</param>
+        public void DeleteFileEntry(string dataDirectory, int dataId, long offset, long length, int chunkSize)
         {
-            OnTotalMaxDetermined(new TotalMaxArgs(8));
+            // Determine the path of this particular file's data.xxx exists
+            string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, dataId);
 
-            // Create a temporary data.xxx from the filePaths
-            List<IndexEntry> tempIndex = Create(filePaths);
+            if (makeBackups) { createBackup(dataPath, chunkSize); }
 
-            // Foreach dataId filter the referenced index
-            for (int dataId = 1; dataId <= 8; dataId++)
+            using (FileStream dataFs = File.Open(dataPath, FileMode.Open, FileAccess.ReadWrite))
             {
-                OnTotalProgressChanged(new TotalChangedArgs(dataId, string.Format("Importing files to data.00{0}", dataId)));
-
-                // Filter the temporary index by current dataId
-                List<IndexEntry> filteredIndex = GetEntriesByDataId(ref tempIndex, dataId, SortType.Size);
-
-                // Determine the path to the current files appropriate data.xxx
-                string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, dataId);
-
-                // If the data.xxx exists
-                if (File.Exists(dataPath))
+                dataFs.Position = offset;
+                using (BinaryWriter bw = new BinaryWriter(dataFs))
                 {
-                    // Open the data.xxx in a filestream with write access
-                    using (FileStream fs = new FileStream(dataPath, FileMode.Open, FileAccess.Write))
-                    {
-                        OnCurrentMaxDetermined(new CurrentMaxArgs(filteredIndex.Count));
-
-                        // Foreach indexEntry in the filteredIndex
-                        for (int entryIdx = 0; entryIdx < filteredIndex.Count; entryIdx++)
-                        {
-                            IndexEntry currentEntry = filteredIndex[entryIdx];
-
-                            // Define file name and extension
-                            string fileName = currentEntry.Name;
-                            string fileExt = Path.GetExtension(fileName).Remove(0,1);
-
-                            OnCurrentProgressChanged(new CurrentChangedArgs(entryIdx, string.Format("Importing file {0}", fileName)));
-
-                            // Define the file path to the file being processed
-                            string filePath = filePaths.ToList().Find(f => f.Contains(fileName));
-
-                            // If the physical file exists
-                            if (File.Exists(filePath))
-                            {
-                                // Load it into a byte array
-                                byte[] fileBytes = File.ReadAllBytes(filePath);
-
-                                fs.Position = fs.Length;
-
-                                currentEntry.Offset = fs.Position;
-
-                                // If the fileBytes need to be encrypted do so
-                                if (XOR.Encrypted(fileExt.ToUpper())) { byte b = 0; XOR.Cipher(ref fileBytes, ref b); }
-
-                                // If no chunkSize is provided, generate default
-                                if (chunkSize == 0) { chunkSize = Math.Max(64000, (int)(fileBytes.Length * .02)); }
-
-                                using (BinaryWriter bw = new BinaryWriter(fs, encoding, true))
-                                {
-                                    // Iterate through the fileByte array writing the chunkSize to fs and reporting current position in
-                                    // the array to the caller via CurrentProgress events
-                                    for (int byteCount = 0; byteCount < fileBytes.Length; byteCount += Math.Min(fileBytes.Length - byteCount, chunkSize))
-                                    {
-                                        bw.Write(fileBytes, byteCount, Math.Min(fileBytes.Length - byteCount, chunkSize));
-                                    }
-                                }
-
-                                // Add the current indexEntry to the referenced data.000 index
-                                index.Add(currentEntry);
-                            }
-                            else { OnError(new ErrorArgs(string.Format("[ImportFileEntries] Cannot locate update file: {0}", filePath))); }
-                        }
-
-                        OnCurrentProgressReset(EventArgs.Empty);
-                    }
+                    bw.Write(new byte[length]);
                 }
-                else { OnError(new ErrorArgs(string.Format("[ImportFileEntries] Cannot locate data file: {0}", dataPath))); }
             }
-
-            OnTotalProgressReset(EventArgs.Empty);
-            GC.Collect();
-        }
-
-        /// <summary>
-        /// Builds the data.xx[dataId] file from provided dumpDirectory into provided buildDirectory
-        /// while updating referenced data.000 index
-        /// </summary>
-        /// <param name="dataId">data.xxx id (e.g. 1-8)</param>
-        /// <param name="index">reference to data.000 (target will be updated)</param>
-        /// <param name="dumpDirectory">Directory containing dumped extension folders (e.g. client/output/dump/)</param>
-        /// <param name="buildDirectory">Directory where the data.xxx file will be built</param>
-        public void BuildDataFile(int dataId, ref List<IndexEntry> index, string dumpDirectory, string buildDirectory)
-        {
-            // If the dumpDirectory exists
-            if (Directory.Exists(dumpDirectory))
-            {
-                OnTotalMaxDetermined(new TotalMaxArgs(1));
-
-                // Build directory list of the dump/ext/ folders
-                string[] extDirectories = Directory.GetDirectories(dumpDirectory);
-
-                // Create a temporary index
-                List<IndexEntry> tempIndex = Create(dumpDirectory);
-
-                // Sort the new data index
-                List<IndexEntry> filteredIndex = GetEntriesByDataId(ref tempIndex, dataId, SortType.Size);
-
-                // Nullify the tempIndex
-                tempIndex = null;
-
-                OnCurrentMaxDetermined(new CurrentMaxArgs(filteredIndex.Count));
-
-                // Define where the newly generated data.xxx file will be built
-                string buildPath = string.Format(@"{0}\data.00{1}", buildDirectory, dataId);
-
-                // Check if the data.xxx exists if so delete it
-                if (File.Exists(buildPath)) { File.Delete(buildPath); }
-
-                // Create a new filestream to write current data.xxx with
-                using (FileStream fs = new FileStream(buildPath, FileMode.Create, FileAccess.Write))
-                {
-                    // Using a binarywriter write to the filestream
-                    using (BinaryWriter bw = new BinaryWriter(fs))
-                    {
-                        // For each IndexEntry in the filteredIndex
-                        for (int curFileIdx = 0; curFileIdx < filteredIndex.Count; curFileIdx++)
-                        {
-                            // Define a handle to access the current indexEntry
-                            IndexEntry fileEntry = filteredIndex[curFileIdx];
-
-                            // Update the entries offset
-                            fileEntry.Offset = fs.Position;
-
-                            OnCurrentProgressChanged(new CurrentChangedArgs(curFileIdx, string.Format("Packing file {0}", fileEntry.Name)));
-
-                            // Determine the path to the file on the physical disk
-                            string filePath = string.Format(@"{0}/{1}/{2}", dumpDirectory, Path.GetExtension(fileEntry.Name).ToUpper().Remove(0, 1), fileEntry.Name);
-
-                            // If the file physically exists
-                            if (File.Exists(filePath))
-                            {
-                                byte[] fileBytes = File.ReadAllBytes(filePath);
-                                if (XOR.Encrypted(Path.GetExtension(fileEntry.Name).Remove(0, 1))) { byte b = 0; XOR.Cipher(ref fileBytes, ref b); }
-                                ((IndexEntry)index.Find(i => i.Name == fileEntry.Name)).Offset = fs.Position;
-                                bw.Write(fileBytes);
-                            }
-                            else { OnError(new ErrorArgs(string.Format("[BuildDataFile] Cannot locate file {0} at: {1}", Path.GetFileName(filePath), filePath))); }
-                        }
-                    }
-                }
-
-                // Delete all entries in the index matching the dataId
-                DeleteEntriesByDataId(ref index, dataId);
-
-                // Add the newly generate data.xxx index section to the referenced index
-                index.AddRange(filteredIndex);
-
-                OnTotalProgressChanged(new TotalChangedArgs(1, ""));
-                OnTotalProgressReset(EventArgs.Empty);
-                OnCurrentProgressReset(EventArgs.Empty);
-            }
-            else { OnError(new ErrorArgs(string.Format("[BuildDataFile] Cannot locate dump directory at: {0}", dumpDirectory))); }
         }
 
         /// <summary>
@@ -1434,13 +1322,14 @@ namespace DataCore
         /// <param name="dumpDirectory">Location of dump folders (e.g. client/output/dump/)</param>
         /// <param name="buildDirectory">Location of build folder (e.g. client/output/data-files/)</param>
         /// <returns>Newly generated List to be saved</returns>
+        /// TODO: Make assurance files don't already exist?
         public List<IndexEntry> BuildDataFiles(string dumpDirectory, string buildDirectory)
         {
             List<IndexEntry> index = null;
 
             if (Directory.Exists(dumpDirectory))
             {
-                OnTotalMaxDetermined(new TotalMaxArgs(9));
+                OnTotalMaxDetermined(new TotalMaxArgs(8, true));
 
                 // Build new data.000
                 string[] extDirectories = Directory.GetDirectories(dumpDirectory);
@@ -1451,7 +1340,7 @@ namespace DataCore
                 index = Create(dumpDirectory);
 
                 // Issue a reset to the CurrentProgressbar
-                OnCurrentProgressReset(EventArgs.Empty);
+                OnCurrentProgressReset(new CurrentResetArgs(true));
 
                 // Foreach data.xxx file (1-8)
                 for (int dataId = 1; dataId <= 8; dataId++)
@@ -1499,15 +1388,72 @@ namespace DataCore
                         }
                     }
 
-                    OnCurrentProgressReset(EventArgs.Empty);
+                    OnCurrentProgressReset(new CurrentResetArgs(true));
                 }
 
-                OnTotalProgressReset(EventArgs.Empty);
+                OnTotalProgressReset(new TotalResetArgs(false));
             }
             else { OnError(new ErrorArgs(string.Format("[BuildDataFiles] Cannot locate dump directory at: {0}", dumpDirectory))); }
 
             GC.Collect();
             return index;
+        }
+
+        /// <summary>
+        /// Rebuilds a data.xxx file potentially removing blank space created by the OEM update method.
+        /// Effectiveness increases depending on amount of updates made to desired data.xxx file.
+        /// </summary>
+        /// <param name="index">Reference to data.000</param>
+        /// <param name="dataDirectory">Location of the data.xxx files</param>
+        /// <param name="dataId">Id of the data.xxx file to be rebuilt</param>
+        /// <param name="buildDirectory">Location of build folder (e.g. client/output/data-files/)</param>
+        public void RebuildDataFile(ref List<IndexEntry> index, string dataDirectory, int dataId, string buildDirectory)
+        {
+            List<IndexEntry> filteredIndex = GetEntriesByDataId(ref index, dataId, SortType.Offset);
+
+            string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, dataId);
+
+            if (File.Exists(dataPath))
+            {
+                // TODO: Pass in chunkSize
+                if (makeBackups) { createBackup(dataPath, Convert.ToInt32(new FileInfo(dataPath).Length * 0.02)); }
+
+                OnMessage(new ConsoleMessageArgs(string.Format("Writing new data.00{0}...", dataId), true, 1, false, 0));
+
+                OnCurrentMaxDetermined(new CurrentMaxArgs(filteredIndex.Count));
+
+                using (FileStream inFS = new FileStream(dataPath, FileMode.Open))
+                {
+                    using (FileStream outFS = File.Create(string.Format(@"{0}_NEW", dataPath)))
+                    {
+                        for (int idx = 0; idx < filteredIndex.Count; idx++)
+                        {
+                            IndexEntry entry = filteredIndex[idx];
+                            IndexEntry originalEntry = GetEntry(ref index, entry.Name);
+
+                            if (originalEntry != null)
+                            {
+                                inFS.Position = entry.Offset;
+                                byte[] inFile = new byte[entry.Length];
+                                inFS.Read(inFile, 0, entry.Length);
+
+                                if (inFile.Length > 0)
+                                {
+                                    originalEntry.Offset = outFS.Position;
+                                    outFS.Write(inFile, 0, inFile.Length);
+                                }
+                                else { OnError(new ErrorArgs(string.Format("[RebuildDataFile] failed to buffer file from the original data file!"))); }
+                            }
+                            else { OnError(new ErrorArgs(string.Format("[RebuildDataFile] failed to find original entry for {0} in the index!", entry.Name))); }
+
+                            OnCurrentProgressChanged(new CurrentChangedArgs(idx, ""));
+                        }
+                    }
+                }
+            }
+            else { OnError(new ErrorArgs(string.Format("[RebuildDataFile] Cannot locate data file: {0}", dataPath))); }
+
+            OnCurrentProgressReset(new CurrentResetArgs(true));
         }
 
         #endregion
@@ -1557,6 +1503,54 @@ namespace DataCore
         /// <param name="name">Name to be unhashed</param>
         /// <returns>Unhashed name</returns>
         public string DecodeName(string name) { return StringCipher.Decode(name); }
+
+        protected string indexName(string name)
+        {
+            bool isEncoded = IsEncoded(name);
+
+            if (NamesEncoded && !isEncoded) { return EncodeName(name); }
+            else if (!NamesEncoded && isEncoded) { return DecodeName(name); }
+            else if (NamesEncoded && isEncoded ||!NamesEncoded && !isEncoded) { return name; }
+            else { return null; }
+        }
+
+        protected void createBackup(string dataPath, int chunkSize)
+        {
+            string bakPath = string.Format(@"{0}_NEW", dataPath);
+            string altBakPath = string.Format(@"{0}_OLD_{1}", dataPath, DateTime.Now.ToLongDateString());
+
+            if (File.Exists(bakPath))
+            {
+                File.Move(bakPath, altBakPath);
+                OnMessage(new ConsoleMessageArgs("Previous BAK was detected and renamed.", true, 1, true, 1));
+            }
+
+            OnMessage(new ConsoleMessageArgs("Creating backup...", true));
+
+            using (FileStream inFS = new FileStream(dataPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                int length = (int)inFS.Length;
+
+                OnCurrentMaxDetermined(new CurrentMaxArgs(inFS.Length));
+
+                using (FileStream outFS = File.Create(string.Format(@"{0}_BAK", dataPath)))
+                {
+                    // If no chunkSize is provided, generate default
+                    if (chunkSize == 0) { chunkSize = Math.Min(64000, (int)(length * .02)); }
+
+                    for (int byteCount = 0; byteCount < length; byteCount += Math.Min(length - byteCount, chunkSize))
+                    {
+                        long nextChunk = Math.Min(length - byteCount, chunkSize);
+                        byte[] inChunks = new byte[nextChunk];
+                        inFS.Read(inChunks, 0, inChunks.Length);
+                        outFS.Write(inChunks, 0, inChunks.Length);
+                        OnCurrentProgressChanged(new CurrentChangedArgs(byteCount, ""));
+                    }
+                }
+            }
+
+            OnCurrentProgressReset(new CurrentResetArgs(true));
+        }
 
         #endregion
     }

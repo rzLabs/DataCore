@@ -2,6 +2,21 @@
 
 namespace DataCore
 {
+    public class ConsoleMessageArgs : EventArgs
+    {
+        public string Message { get; set; }
+        public bool Tab { get; set; }
+        public int TabCount { get; set; }
+        public bool Break { get; set; }
+        public int BreakCount { get; set; }
+
+        public ConsoleMessageArgs(string message) { Message = message; Tab = false; TabCount = 0; }
+        public ConsoleMessageArgs(string message, bool tab) { Message = message; Tab = true; TabCount = 1; }
+        public ConsoleMessageArgs(string message, bool tab, int tabCount) { Message = message; Tab = true; TabCount = tabCount; }
+        public ConsoleMessageArgs(string message, bool tab, int tabCount, bool @break) { Message = message; Tab = true; TabCount = tabCount;  Break = @break;  BreakCount = 1; }
+        public ConsoleMessageArgs(string message, bool tab, int tabCount, bool @break, int breakCount) { Message = message; Tab = true; TabCount = tabCount; Break = @break; BreakCount = breakCount; }
+    }
+
     /// <summary>
     /// Houses arguments passed to caller during raising of ErrorOccured event
     /// </summary>
@@ -38,11 +53,16 @@ namespace DataCore
         public int Maximum { get; set; }
 
         /// <summary>
+        /// Indicates if the DataCore is processing a group of tasks or reporting a single progresses total
+        /// </summary>
+        public bool IsTasks { get; set; }
+
+        /// <summary>
         /// Constructor for the TotalMaxArgs, inheriting from EventArgs
         /// Assigns the Maximum value
         /// </summary>
         /// <param name="maximum"></param>
-        public TotalMaxArgs(int maximum) { Maximum = maximum; }
+        public TotalMaxArgs(int maximum, bool isTasks) { Maximum = maximum; IsTasks = isTasks; }
     }
 
     /// <summary>
@@ -60,13 +80,27 @@ namespace DataCore
         /// </summary>
         public string Status { get; set; }
 
+        public bool IgnoreStatus { get; set; }
+
         /// <summary>
         /// Constructor for TotalChangesArgs, inherits from EventArgs
         /// Assigns Value and Status
         /// </summary>
         /// <param name="value"></param>
         /// <param name="status"></param>
-        public TotalChangedArgs(int value, string status) { Value = value; Status = status; }
+        public TotalChangedArgs(int value, string status)
+        {
+            Value = value;
+            Status = status;
+            IgnoreStatus = (status.Length > 0) ? false : true;
+        }
+    }
+
+    public class TotalResetArgs : EventArgs
+    {
+        public bool WriteOK { get; set; }
+
+        public TotalResetArgs(bool writeOK) { WriteOK = writeOK; }
     }
 
     /// <summary>
@@ -101,5 +135,12 @@ namespace DataCore
         /// <param name="value"></param>
         /// <param name="status"></param>
         public CurrentChangedArgs(long value, string status) { Value = value; Status = status; }
+    }
+
+    public class CurrentResetArgs : EventArgs
+    {
+        public bool WriteOK { get; set; }
+
+        public CurrentResetArgs(bool writeOK) { WriteOK = writeOK; }
     }
 }
