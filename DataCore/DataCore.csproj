@@ -34,6 +34,9 @@
     <DocumentationFile>bin\Release\DataCore.XML</DocumentationFile>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="MoonSharp.Interpreter">
+      <HintPath>..\..\rMOD\MoonSharp.Interpreter.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
@@ -48,6 +51,8 @@
     <Compile Include="Enums.cs" />
     <Compile Include="Functions\Extensions.cs" />
     <Compile Include="Functions\Hash.cs" />
+    <Compile Include="Functions\IO.cs" />
+    <Compile Include="Functions\LUA.cs" />
     <Compile Include="Functions\StringCipher.cs" />
     <Compile Include="Functions\XOR.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

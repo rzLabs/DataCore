@@ -23,20 +23,29 @@ namespace DataCore
     // TODO: Add 'RemoveDuplicates' (ascii/non-ascii) <reduce client size?>
     // TODO: Add 'RebuildDataFile' function
     // TODO: Add 'CompareFiles' function (to compare external file with data file)
+    // TODO: Remove useless ref param from methods
 
     /// <summary>
     /// Provides interactive access to the Rappelz Data.XXX File Management System
     /// </summary>
     public class Core
     {
-        public bool NamesEncoded = false;
-        protected bool makeBackups = false;
+        bool makeBackups = false;
 
         /// <summary>
         /// Defines the encoding of files to be the default of the system
         /// unless changed by the caller during construction of Core
         /// </summary>
         internal readonly Encoding encoding = Encoding.Default;
+
+        public List<IndexEntry> Index;
+
+        /// <summary>
+        /// Count of IndexEntrys listed in the loaded Index
+        /// </summary>
+        public int RowCount { get { return Index.Count; } }
+
+        LUA luaIO;
 
         #region Events
         public event EventHandler<ConsoleMessageArgs> MessageOccured;
@@ -114,24 +123,33 @@ namespace DataCore
         /// </summary>
         public Core() { }
 
-        /// <summary>
-        /// Constructor allowing encoding to be passed in by caller
-        /// </summary>
-        /// <param name="overrideEncoding">Encoding to be used during operation</param>
-        public Core(Encoding overrideEncoding) { encoding = overrideEncoding; }
-
-        public Core(bool backup) { makeBackups = backup; }
-
-        public Core(Encoding overrideEncoding, bool backup)
+        public Core(bool backup, string configPath)
         {
             makeBackups = backup;
-            encoding = overrideEncoding;
+            luaIO = new LUA(IO.LoadConfig(configPath));
         }
+
+        public Core(Encoding encoding, bool backup, string configPath)
+        {
+            makeBackups = backup;
+            this.encoding = encoding;
+            luaIO = new LUA(IO.LoadConfig(configPath));
+        }
+
+        #endregion
+
+        #region Get Methods
+
+        /// <summary>
+        /// Returns a list of valid extensions that can be exported
+        /// </summary>
+        public List<string> ExtensionList { get { return Extensions.ValidExtensions; } }
 
         #endregion
 
         #region Data.000/BLK Methods
 
+        // TODO: Rewrite the ConsoleMessageArgs class
         /// <summary>
         /// Generates a new data.000 index based on provided dumpDirectory
         /// Expects: /tga /jpg /wav /dds style dump folder structure
@@ -140,41 +158,40 @@ namespace DataCore
         /// </summary>
         /// <param name="dumpDirectory">Location of dump folders (e.g. client/output/dump/)</param>
         /// <returns>Populated data.000 index</returns>
-        public List<IndexEntry> Create(string dumpDirectory)
+        public List<IndexEntry> New(string dumpDirectory)
         {
-            OnTotalMaxDetermined(new TotalMaxArgs(1, true));
-            OnTotalProgressChanged(new TotalChangedArgs(0, "Creating new data.000..."));
+            OnMessage(new ConsoleMessageArgs("Creating new data.000...", false, 0, true, 1));
 
-            List<IndexEntry> index = new List<IndexEntry>();
+            List<IndexEntry> newIndex = new List<IndexEntry>();
 
             if (Directory.Exists(dumpDirectory))
             {
                 string[] extDirectories = Directory.GetDirectories(dumpDirectory);
 
-                OnCurrentMaxDetermined(new CurrentMaxArgs(extDirectories.Length));
-
                 for (int dumpDirIdx = 0; dumpDirIdx < extDirectories.Length; dumpDirIdx++)
                 {
-                    OnCurrentProgressChanged(new CurrentChangedArgs(dumpDirIdx, string.Format("Indexing files in: {0}", extDirectories[dumpDirIdx])));
+                    OnMessage(new ConsoleMessageArgs(string.Format("Indexing files in directory: {0}...", extDirectories[dumpDirIdx]), true, 1));
+
                     string[] directoryFiles = Directory.GetFiles(extDirectories[dumpDirIdx]);
+
+                    OnCurrentMaxDetermined(new CurrentMaxArgs(directoryFiles.Length));
+
                     for (int directoryFileIdx = 0; directoryFileIdx < directoryFiles.Length; directoryFileIdx++)
                     {
-                        index.Add(new IndexEntry
+                        OnCurrentProgressChanged(new CurrentChangedArgs(directoryFileIdx, string.Empty));
+                        Index.Add(new IndexEntry
                         {
                             Name = Path.GetFileName(directoryFiles[directoryFileIdx]),
                             Length = (int)new FileInfo(directoryFiles[directoryFileIdx]).Length,
-                            DataID = GetID(Path.GetFileName(directoryFiles[directoryFileIdx])),
+                            DataID = StringCipher.GetID(Path.GetFileName(directoryFiles[directoryFileIdx])),
                             Offset = 0
                         });
                     }
+
+                    OnCurrentProgressReset(new CurrentResetArgs(true));
                 }
 
-                OnTotalProgressChanged(new TotalChangedArgs(1, ""));
-
-                OnTotalProgressReset(new TotalResetArgs(false));
-                OnCurrentProgressReset(new CurrentResetArgs(true));
-
-                return index;
+                return newIndex;
             }
             else { OnError(new ErrorArgs(string.Format("[Create] Cannot locate dump directory at: {0}", dumpDirectory))); }
 
@@ -188,24 +205,24 @@ namespace DataCore
         /// </summary>
         /// <param name="filePaths">Array of file paths to be indexed</param>
         /// <returns>Generated index</returns>
-        public List<IndexEntry> Create(string[] filePaths)
+        public List<IndexEntry> New(string[] filePaths)
         {
-            List<IndexEntry> tempIndex = new List<IndexEntry>(filePaths.Length);
+            List<IndexEntry> newIndex = new List<IndexEntry>(filePaths.Length);
 
             foreach (string filePath in filePaths)
             {
                 FileInfo fileInfo = new FileInfo(filePath);
                 IndexEntry indexEntry = new IndexEntry
                 {
-                    Name = indexName(fileInfo.Name),
+                    Name = fileInfo.Name,
                     Offset = 0,
                     Length = (int)fileInfo.Length,
-                    DataID = GetID(fileInfo.Name)
+                    DataID = StringCipher.GetID(fileInfo.Name)
                 };
-                tempIndex.Add(indexEntry);
+                Index.Add(indexEntry);
             }
 
-            return tempIndex;
+            return newIndex;
         }
 
         /// <summary>
@@ -215,15 +232,15 @@ namespace DataCore
         /// <param name="decodeNames">Determines if the file names should be decoded during load</param>
         /// <param name="reportInterval">How many bytes should be processed before reporting</param>
         /// <returns>A populated index or null</returns>
-        public List<IndexEntry> Load(string path, bool decodeNames, int reportInterval)
+        public void Load(string path, bool decodeNames)
         {
             bool isBlank = !path.Contains(".000");
 
-            List<IndexEntry> index = new List<IndexEntry>();
+            Index = new List<IndexEntry>();
 
             byte b = 0;
 
-            long lastCount = 0;
+            long bytesRead = 0;
 
             if (File.Exists(path))
             {
@@ -237,35 +254,33 @@ namespace DataCore
 
                         byte[] array = new byte[1];
                         ms.Read(array, 0, array.Length);
+
                         XOR.Cipher(ref array, ref b);
                         byte[] bytes = new byte[array[0]];
                         ms.Read(bytes, 0, bytes.Length);
                         XOR.Cipher(ref bytes, ref b);
+
                         byte[] value = new byte[8];
                         ms.Read(value, 0, value.Length);
                         XOR.Cipher(ref value, ref b);
 
-                        dataIndexEntry.Name = (decodeNames) ? StringCipher.Decode(Encoding.Default.GetString(bytes)) : Encoding.Default.GetString(bytes);
+                        dataIndexEntry.Name = (decodeNames) ? StringCipher.Decode(bytes) : Encoding.Default.GetString(bytes);
                         dataIndexEntry.Offset = BitConverter.ToInt32(value, 0);
                         dataIndexEntry.Length = BitConverter.ToInt32(value, 4);
-                        dataIndexEntry.DataID = GetID(Encoding.Default.GetString(bytes));
-                        index.Add(dataIndexEntry);
+                        dataIndexEntry.DataID = StringCipher.GetID(bytes);
+                        Index.Add(dataIndexEntry);
 
-                        if ((ms.Position - lastCount) >= reportInterval)
+                        if ((ms.Position - bytesRead) >= 50000)
                         {
                             OnCurrentProgressChanged(new CurrentChangedArgs(ms.Position, ""));
-                            lastCount = ms.Position;
+                            bytesRead = ms.Position;
                         }
                     }
-
-                    OnCurrentProgressReset(new CurrentResetArgs(true));
                 }
-
-                NamesEncoded = !decodeNames;
             }
             else { OnError(new ErrorArgs(string.Format("[Load] Cannot find data.000 at path: {0}", path))); }
 
-            return (index.Count > 0) ? index : null;
+            OnCurrentProgressReset(new CurrentResetArgs(true));
         }
 
         /// <summary>
@@ -276,7 +291,7 @@ namespace DataCore
         /// <param name="isBlankIndex">Determines if the index is a Blank Space Index</param>
         /// <returns>bool value indicating success or failure</returns>
         /// TODO: UPDATE PATH!
-        public void Save(ref List<IndexEntry> index, string buildDirectory, bool isBlankIndex)
+        public void Save(string buildDirectory, bool isBlankIndex)
         {
             string buildPath = string.Format(@"{0}\data.{1}", buildDirectory, (isBlankIndex) ? "blk" : "000");
             bool isBlank = !buildPath.Contains(".000");
@@ -285,20 +300,17 @@ namespace DataCore
 
             if (File.Exists(buildPath)) { File.Delete(buildPath); }
 
-            long lastCount = 0;
+            OnMessage(new ConsoleMessageArgs("Writing new data.000..."));
 
             using (BinaryWriter bw = new BinaryWriter(File.Create(buildPath), Encoding.Default))
             {
                 byte b = 0;
 
-                OnCurrentMaxDetermined(new CurrentMaxArgs(index.Count));
+                OnCurrentMaxDetermined(new CurrentMaxArgs(Index.Count));
 
-                for (int idx = 0; idx < index.Count; idx++)
+                for (int idx = 0; idx < Index.Count; idx++)
                 {
-                    IndexEntry indexEntry = index[idx];
-
-                    int lastIdx = 0;
-                    if (lastIdx - idx > 64000) { OnCurrentProgressChanged(new CurrentChangedArgs(idx, "")); }
+                    IndexEntry indexEntry = Index[idx];
 
                     string name = IsEncoded(indexEntry.Name) ? indexEntry.Name : EncodeName(indexEntry.Name);
                     byte[] buffer = new byte[] { Convert.ToByte(name.Length) };
@@ -313,11 +325,8 @@ namespace DataCore
                     XOR.Cipher(ref array, ref b);
                     bw.Write(array);
 
-                    if ((idx - lastCount) >= 64000)
-                    {
-                        OnCurrentProgressChanged(new CurrentChangedArgs(idx, ""));
-                        lastCount = idx;
-                    }
+                    int lastIdx = 0;
+                    if (lastIdx - idx > 64000) { OnCurrentProgressChanged(new CurrentChangedArgs(idx, "")); lastIdx = idx; }
                 }
 
                 OnCurrentProgressReset(new CurrentResetArgs(true));
@@ -327,29 +336,55 @@ namespace DataCore
         /// <summary>
         /// Reorders references index by sortType
         /// </summary>
-        /// <param name="index">Reference to data.000 index</param>
-        /// <param name="sortType">Type of sort to be performed</param>
-        public void Sort(ref List<IndexEntry> index, int sortType)
+        /// <param name="type">Type of sort to be performed</param>
+        public void Sort(SortType type)
         {
-            switch (sortType)
+            switch (type)
             {
                 case SortType.Name:
-                    index.OrderBy(i => i.Name);
+                    Index = Index.OrderBy(i => i.Name).ToList();
                     break;
 
                 case SortType.Offset:
-                    index.OrderBy(i => i.Offset);
+                    Index = Index.OrderBy(i => i.Offset).ToList();
                     break;
 
                 case SortType.Size:
-                    index.OrderBy(i => i.Length);
+                    Index = Index.OrderBy(i => i.Length).ToList();
                     break;
 
                 case SortType.DataId:
-                    index.OrderBy(i => i.DataID);
+                    Index = Index.OrderBy(i => i.DataID).ToList();
                     break;
             }
         }
+
+        /// <summary>
+        /// Returns a bool indicating if the matching entry exists in the referenced index
+        /// </summary>
+        /// <param name="index">Reference to data.000 index</param>
+        /// <param name="name">File name being searched for</param>
+        /// <returns>true or false</returns>
+        public bool EntryExists(string name) { return Index.Find(i => i.Name == name) != null; }
+
+        /// <summary>
+        /// Gets the total size of all the files listed in the filteredList
+        /// </summary>
+        /// <param name="filteredList">List of files to be summed</param>
+        /// <returns>(long) File Size of filteredList</returns>
+        public long GetStoredSized(List<IndexEntry> filteredList)
+        {
+            long size = 0;
+            foreach (IndexEntry entry in filteredList) { size += entry.Length; }
+            return size;
+        }
+
+        /// <summary>
+        /// Returns an IndexEntry based on its ordinal position
+        /// </summary>
+        /// <param name="index">Oridinal position of the desired IndexEntry</param>
+        /// <returns>(IndexEntry)</returns>
+        public IndexEntry GetEntry(int index) { return this.Index[index]; }
 
         /// <summary>
         /// Returns an IndexEntry based on it's [UNHASHED] name
@@ -357,7 +392,7 @@ namespace DataCore
         /// <param name="index">Reference to data.000 index</param>
         /// <param name="name">File name being searched for</param>
         /// <returns>IndexEntry of name</returns>
-        public IndexEntry GetEntry(ref List<IndexEntry> index, string name) { return index.Find(i => i.Name == name); }
+        public IndexEntry GetEntry(string name) { return Index.Find(i => i.Name == name); }
 
         /// <summary>
         /// Returns an IndexEntry based on it's dataId and offset
@@ -366,7 +401,7 @@ namespace DataCore
         /// <param name="dataId">data.xxx id being searched</param>
         /// <param name="offset">offset of file in dataId being searched</param>
         /// <returns>IndexEntry of dataId and offset</returns>
-        public IndexEntry GetEntry(ref List<IndexEntry> index, int dataId, int offset) { return index.Find(i => i.DataID == dataId && i.Offset == offset); }
+        public IndexEntry GetEntry(int dataId, int offset) { return Index.Find(i => i.DataID == dataId && i.Offset == offset); }
 
         /// <summary>
         /// Returns a blankIndex entry with an AvailableSpace betweem the minimum and maximum sizes (if one exists)
@@ -376,7 +411,7 @@ namespace DataCore
         /// <param name="minSize">Minimum size of blank space</param>
         /// <param name="maxSize">Maximum size of blank space</param>
         /// <returns>Populated BlankIndexEntry (if one exists)</returns>
-        public IndexEntry GetClosestEntry(ref List<IndexEntry> blankIndex, int dataId, int minSize, int maxSize)
+        public IndexEntry GetClosestEntry(List<IndexEntry> blankIndex, int dataId, int minSize, int maxSize)
         {
             // Set lastSmallest to maximum desired size
             int lastSmallest = maxSize;
@@ -410,7 +445,7 @@ namespace DataCore
         /// <param name="index">Reference to data.000 index</param>
         /// <param name="partialName">Partial fileName (e.g. db_) to be searched for</param>
         /// <returns>Populated List of IndexEntries</returns>
-        public List<IndexEntry> GetEntriesByPartialName(ref List<IndexEntry> index, string partialName) { return index.FindAll(i => i.Name.Contains(partialName)); }
+        public List<IndexEntry> GetEntriesByPartialName(string partialName) { return Index.FindAll(i => i.Name.Contains(partialName)); }
 
         /// <summary>
         /// Returns a List of all entries matching dataId
@@ -418,7 +453,7 @@ namespace DataCore
         /// <param name="index">Reference to data.000 index</param>
         /// <param name="dataId">data.xxx Id being requested</param>
         /// <returns>List for data.xx{dataId}</returns>
-        public List<IndexEntry> GetEntriesByDataId(ref List<IndexEntry> index, int dataId) { return index.FindAll(i => i.DataID == dataId); }
+        public List<IndexEntry> GetEntriesByDataId(int dataId) { return Index.FindAll(i => i.DataID == dataId); }
 
         /// <summary>
         /// Returns a filtered List of all entries matching dataId
@@ -432,18 +467,18 @@ namespace DataCore
         /// 1 = Offset
         /// 2 = Size
         /// <returns>List for data.xx{dataId}</returns>
-        public List<IndexEntry> GetEntriesByDataId(ref List<IndexEntry> index, int dataId, int sortType)
+        public List<IndexEntry> GetEntriesByDataId(int dataId, SortType type)
         {
-            switch (sortType)
+            switch (type)
             {
                 case SortType.Name: // Name
-                    return index.FindAll(i => i.DataID == dataId).OrderBy(i => i.Name).ToList();
+                    return Index.FindAll(i => i.DataID == dataId).OrderBy(i => i.Name).ToList();
 
                 case SortType.Offset: // Offset
-                    return index.FindAll(i => i.DataID == dataId).OrderBy(i => i.Offset).ToList();
+                    return Index.FindAll(i => i.DataID == dataId).OrderBy(i => i.Offset).ToList();
 
                 case SortType.Size: // Size
-                    return index.FindAll(i => i.DataID == dataId).OrderBy(i => i.Length).ToList();
+                    return Index.FindAll(i => i.DataID == dataId).OrderBy(i => i.Length).ToList();
             }
 
             return null;
@@ -453,23 +488,23 @@ namespace DataCore
         /// Returns a filtered List of all entries matching dataId
         /// Return is sorted by sortType
         /// </summary>
-        /// <param name="blankIndex">Reference to data.blk index</param>
+        /// <param name="filteredIndx">Reference to data.000 index</param>
         /// <param name="dataId">data.xxx Id being requested</param>
         /// <param name="sortType">Type code for how to sort return</param>
         /// <returns>List for data.xx{dataId}</returns>
-        public List<BlankIndexEntry> GetEntriesByDataId(ref List<BlankIndexEntry> blankIndex, int dataId, int sortType)
+        public List<IndexEntry> GetEntriesByDataId(List<IndexEntry> filteredIndx, int dataId, SortType type)
         {
-            switch (sortType)
+            switch (type)
             {
                 case SortType.Name: // Name
-                    OnWarning(new WarningArgs("[GetEntriesByDataId] BlankIndex cannot be sorted by Name!\nPlease try again."));
+                    OnWarning(new WarningArgs("[GetEntriesByDataId] Index cannot be sorted by Name!\nPlease try again."));
                     break;
 
                 case SortType.Offset: // Offset
-                    return blankIndex.FindAll(i => i.DataID == dataId).OrderBy(i => i.Offset).ToList();
+                    return filteredIndx.FindAll(i => i.DataID == dataId).OrderBy(i => i.Offset).ToList();
 
                 case SortType.Size: // Size
-                    return blankIndex.FindAll(i => i.DataID == dataId).OrderBy(i => i.AvailableSpace).ToList();
+                    return filteredIndx.FindAll(i => i.DataID == dataId).OrderBy(i => i.Length).ToList();
             }
 
             return null;
@@ -481,7 +516,7 @@ namespace DataCore
         /// <param name="index">data.000 index being searched</param>
         /// <param name="extension">extension being searched (e.g. dds)</param>
         /// <returns>Filtered List of extension</returns>
-        public List<IndexEntry> GetEntriesByExtension(ref List<IndexEntry> index, string extension) { return index.FindAll(i => i.Name.Contains(string.Format(".{0}", extension.ToLower()))); }
+        public List<IndexEntry> GetEntriesByExtension(string extension) { return Index.FindAll(i => i.Name.Contains(string.Format(".{0}", extension.ToLower()))); }
 
         /// <summary>
         /// Returns a filtered List of all entries matching extension
@@ -494,21 +529,21 @@ namespace DataCore
         /// 1 = Offset
         /// 2 = Size
         /// <returns>Filtered List of extension</returns>
-        public List<IndexEntry> GetEntriesByExtension(ref List<IndexEntry> index, string extension, int sortType)
+        public List<IndexEntry> GetEntriesByExtension(string extension, int sortType)
         {
             switch (sortType)
             {
                 case 0: // Name
-                    return index.FindAll(i => i.Name.Contains(string.Format(".{0}", extension.ToLower()))).OrderBy(i => i.Name).ToList();
+                    return Index.FindAll(i => i.Name.Contains(string.Format(".{0}", extension.ToLower()))).OrderBy(i => i.Name).ToList();
 
                 case 1: // Offset
-                    return index.FindAll(i => i.Name.Contains(string.Format(".{0}", extension.ToLower()))).OrderBy(i => i.Offset).ToList();
+                    return Index.FindAll(i => i.Name.Contains(string.Format(".{0}", extension.ToLower()))).OrderBy(i => i.Offset).ToList();
 
                 case 2: // Size
-                    return index.FindAll(i => i.Name.Contains(string.Format(".{0}", extension.ToLower()))).OrderBy(i => i.Length).ToList();
+                    return Index.FindAll(i => i.Name.Contains(string.Format(".{0}", extension.ToLower()))).OrderBy(i => i.Length).ToList();
 
                 case 3: // dataId
-                    return index.FindAll(i => i.Name.Contains(string.Format(".{0}", extension.ToLower()))).OrderBy(i => i.DataID).ToList();
+                    return Index.FindAll(i => i.Name.Contains(string.Format(".{0}", extension.ToLower()))).OrderBy(i => i.DataID).ToList();
             }
 
             return null;
@@ -519,17 +554,23 @@ namespace DataCore
         /// </summary>
         /// <param name="index">Index to be altered</param>
         /// <param name="dataId">Id of file entries to be deleted</param>
-        public void DeleteEntriesByDataId(ref List<IndexEntry> index, int dataId) { index.RemoveAll(i => i.DataID == dataId); }
+        public void DeleteEntriesByDataId(int dataId) { Index.RemoveAll(i => i.DataID == dataId); }
 
+        // TODO: Update this method to not be so stupid!
         /// <summary>
         /// Removes a single entry bearing Name = name from referenced data.000 index
         /// </summary>
         /// <param name="index">Index to be altered</param>
-        /// <param name="name">Name of file entry to be deleted</param>
-        public void DeleteEntryByName(ref List<IndexEntry> index, string fileName, string dataDirectory, int dataId, long offset, long length, int chunkSize)
+        /// <param name="fileName">Name of the IndexEntry being deleted</param>
+        /// <param name="dataDirectory">Directory of the data.xxx files</param>
+        /// <param name="dataId">ID of the data.xxx file housing this file</param>
+        /// <param name="offset">Offset of the file being deleted</param>
+        /// <param name="length">Length of the file being deleted</param>
+        /// <param name="chunkSize">Amount of bytes to be processed before reporting</param>
+        public void DeleteEntryByName(string fileName, string dataDirectory, int dataId, long offset, long length, int chunkSize)
         {
             DeleteFileEntry(dataDirectory, dataId, offset, length, chunkSize);
-            index.Remove(index.Find(i => i.Name == fileName));
+            Index.Remove(Index.Find(i => i.Name == fileName));
         }
 
         /// <summary>
@@ -538,12 +579,86 @@ namespace DataCore
         /// <param name="index">Index to be altered</param>
         /// <param name="id">DataID of file entry to be deleted</param>
         /// <param name="offset">Offset of file entry to be deleted</param>
-        public void DeleteEntryByIdandOffset(ref List<IndexEntry> index, int id, int offset) { index.Remove(index.Find(i => i.DataID == id && i.Offset == offset)); }
+        public void DeleteEntryByIdandOffset(int id, int offset) { Index.Remove(Index.Find(i => i.DataID == id && i.Offset == offset)); }
+
+        /// <summary>
+        /// Updates the offset for IndexEntry with given fileName in the referenced index
+        /// </summary>
+        /// <param name="index">Index to be altered</param>
+        /// <param name="fileName">Name of the IndexEntry being updated</param>
+        /// <param name="offset">New offset for the IndexEntry</param>
+        public void UpdateEntryOffset(string fileName, long offset)
+        {
+            try { Index.Find(i => i.Name == fileName).Offset = offset; }
+            catch (Exception ex) { OnError(new ErrorArgs(ex.Message)); }
+        }
 
         #endregion
 
         #region File Methods
 
+        /// <summary>
+        /// Gets the collection of bytes that makes up a given file
+        /// </summary>
+        /// <param name="dataDirectory">Directory of the Data.XXX files</param>
+        /// <param name="dataId">ID of the target data.xxx</param>
+        /// <param name="offset">Offset of the target file</param>
+        /// <param name="length">Length of the target file</param>
+        /// <returns>Bytes of the target file</returns>
+        public byte[] GetFileBytes(string dataDirectory, int dataId, long offset, long length)
+        {
+            byte[] buffer = new byte[length];
+
+            if (dataId > 0 && dataId < 9)
+            {
+                string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, dataId);
+
+                if (File.Exists(dataPath))
+                {
+                    using (FileStream fs = File.Open(dataPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    {
+                        fs.Seek(offset, SeekOrigin.Begin);
+                        fs.Read(buffer, 0, buffer.Length);
+                    }
+                }
+                else { OnError(new ErrorArgs(string.Format(@"[GetFileBytes] Cannot locate: {0}", dataPath))); }
+            }
+            else { OnError(new ErrorArgs("[GetFileBytes] dataId is invalid! Must be between 1-8")); }
+
+            return buffer;
+        }
+
+        /// <summary>
+        /// Gets the collection of bytes that makes up a given file
+        /// </summary>
+        /// <param name="dataDirectory">Directory of the Data.XXX files</param>
+        /// <param name="entry">(IndexEntry) containing information about the target file</param>
+        /// <returns>Bytes of the target file</returns>
+        public byte[] GetFileBytes(string dataDirectory, IndexEntry entry)
+        {
+            int dataId = entry.DataID;
+
+            byte[] buffer = new byte[entry.Length];
+
+            if (dataId > 0 && dataId < 9)
+            {
+                string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, dataId);
+
+                if (File.Exists(dataPath))
+                {
+                    using (FileStream fs = File.Open(dataPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    {
+                        fs.Seek(entry.Offset, SeekOrigin.Begin);
+                        fs.Read(buffer, 0, buffer.Length);
+                    }
+                }
+                else { OnError(new ErrorArgs(string.Format(@"[GetFileBytes] Cannot locate: {0}", dataPath))); }
+            }
+            else { OnError(new ErrorArgs("[GetFileBytes] dataId is invalid! Must be between 1-8")); }
+
+            return buffer;
+        }
+            
         /// <summary>
         /// Generates an SHA512 hash for the given fileName by locating the bytes in data.XXX storage
         /// </summary>
@@ -551,11 +666,10 @@ namespace DataCore
         /// <param name="dataDirectory">Location of the data.xxx files</param>
         /// <param name="fileName">Name of the file to generate hash for</param>
         /// <returns>SHA512 Hash String</returns>
-        public string GetFileSHA512(ref List<IndexEntry> index, string dataDirectory, string fileName)
+        public string GetFileSHA512(string dataDirectory, string fileName)
         {
-            string name = indexName(fileName);
 
-            int dataId = GetID(fileName);
+            int dataId = StringCipher.GetID(fileName);
 
             if (dataId > 0)
             {
@@ -564,7 +678,7 @@ namespace DataCore
                 if (File.Exists(dataPath))
                 {
                     byte[] buffer = null;
-                    IndexEntry fileEntry = GetEntry(ref index, name);
+                    IndexEntry fileEntry = GetEntry(fileName);
 
                     if (fileEntry != null)
                     {
@@ -576,7 +690,7 @@ namespace DataCore
 
                             if (buffer.Length > 0)
                             {
-                                string ext = IsEncoded(name) ? Path.GetExtension(DecodeName(name)).Remove(0, 1).ToLower() : Path.GetExtension(name).Remove(0, 1);
+                                string ext = IsEncoded(fileName) ? Path.GetExtension(DecodeName(fileName)).Remove(0, 1).ToLower() : Path.GetExtension(fileName).Remove(0, 1);
                                 if (XOR.Encrypted(ext)) { byte b = 0; XOR.Cipher(ref buffer, ref b); }
 
                                 string hash = Hash.GetSHA512Hash(buffer, buffer.Length);
@@ -586,16 +700,16 @@ namespace DataCore
                                     buffer = null;
                                     return hash;
                                 }
-                                else { OnError(new ErrorArgs(string.Format(@"Failed to generate hash for: {0}", name))); }
+                                else { OnError(new ErrorArgs(string.Format(@"Failed to generate hash for: {0}", fileName))); }
                             }
                             else { OnError(new ErrorArgs("[GetFileSHA512] Failed to read file into buffer!")); }
                         }
                     }
-                    else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] Failed to locate entry for: {0}", name))); }
+                    else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] Failed to locate entry for: {0}", fileName))); }
                 }
                 else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] Cannot locate: {0}", dataPath))); }
             }
-            else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] dataId is 0!\nPerhaps file: {0} doesn't exist!", name))); }
+            else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] dataId is 0!\nPerhaps file: {0} doesn't exist!", fileName))); }
 
             return null;
         }
@@ -611,7 +725,7 @@ namespace DataCore
         /// <returns>SHA512 Hash String</returns>
         public string GetFileSHA512(string dataDirectory, int dataId, long offset, int length, string fileExt)
         {
-            if (dataId > 0)
+            if (dataId > 0 && dataId < 9)
             {
                 string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, dataId);
 
@@ -655,9 +769,9 @@ namespace DataCore
         /// <param name="dataDirectory">Location of the data.xxx files</param>
         /// <param name="fileName">Name of the file to generate hash for</param>
         /// <returns>MD5 Hash String</returns>
-        public string GetFileMD5(ref List<IndexEntry> index, string dataDirectory, string fileName)
+        public string GetFileMD5(string dataDirectory, string fileName)
         {
-            int dataId = GetID(fileName);
+            int dataId = StringCipher.GetID(fileName);
 
             if (dataId > 0)
             {
@@ -666,7 +780,7 @@ namespace DataCore
                 if (File.Exists(dataPath))
                 {
                     byte[] buffer = null;
-                    IndexEntry fileEntry = GetEntry(ref index, fileName);
+                    IndexEntry fileEntry = GetEntry(fileName);
 
                     if (fileEntry != null)
                     {
@@ -763,7 +877,7 @@ namespace DataCore
         /// <param name="chunkSize">Size (in bytes) to process each iteration of the write loop</param>
         public void ExportFileEntry(string dataDirectory, string buildPath, long offset, int length, int chunkSize)
         {
-            string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, GetID(Path.GetFileName(buildPath)));
+            string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, StringCipher.GetID(Path.GetFileName(buildPath)));
 
             if (File.Exists(dataPath))
             {
@@ -828,7 +942,7 @@ namespace DataCore
         /// <param name="dataDirectory">Location of the data.xxx files</param>
         /// <param name="buildDirectory">Location to export files</param>
         /// <param name="chunkSize">Size (in bytes) to process each iteration of the write loop</param>
-        public void ExportFileEntries(ref List<IndexEntry> filteredIndex, string dataDirectory, string buildDirectory, int chunkSize)
+        public void ExportFileEntries(List<IndexEntry> filteredIndex, string dataDirectory, string buildDirectory, int chunkSize)
         {
             OnTotalMaxDetermined(new TotalMaxArgs(8, true));
 
@@ -836,7 +950,7 @@ namespace DataCore
             for (int dataId = 1; dataId <= 8; dataId++)
             {
                 // Filter only entries with current dataId into temp index
-                List<IndexEntry> tempIndex = GetEntriesByDataId(ref filteredIndex, dataId, SortType.Offset);
+                List<IndexEntry> tempIndex = GetEntriesByDataId(filteredIndex, dataId, SortType.Offset);
 
                 if (tempIndex.Count > 0)
                 {
@@ -920,7 +1034,7 @@ namespace DataCore
         /// <param name="dataDirectory">Location of the data.xxx files</param>
         /// <param name="filePath">Location of the file being imported</param>
         /// <param name="chunkSize">Size (in bytes) to process each iteration of the write loop</param>
-        public void UpdateFileEntry(ref List<IndexEntry> index, string dataDirectory, string filePath, int chunkSize)
+        public void UpdateFileEntry(List<IndexEntry> index, string dataDirectory, string filePath, int chunkSize)
         {
             // Define some temporary information about the file being imported
             string fileName = Path.GetFileName(filePath);
@@ -938,7 +1052,7 @@ namespace DataCore
             //OnWarning(new WarningArgs(string.Format("IsEncoded: {0} | fileName: {1}", isEncoded.ToString(), index[0].Name)));
 
             // Determine the path to the current files appropriate data.xxx
-            string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, GetID(fileName));
+            string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, StringCipher.GetID(fileName));
 
             // If the physical data.xxx actually exists
             if (File.Exists(dataPath))
@@ -1014,7 +1128,7 @@ namespace DataCore
         /// <param name="dataDirectory">Location of the data.xxx files</param>
         /// <param name="filePath">Location of the file being imported</param>
         /// <param name="chunkSize">Size (in bytes) to process each iteration of the write loop</param>
-        public void UpdateFileEntry(ref List<IndexEntry> index, ref List<IndexEntry> blankIndex, string dataDirectory, string filePath, int chunkSize)
+        public void UpdateFileEntry(List<IndexEntry> index, ref List<IndexEntry> blankIndex, string dataDirectory, string filePath, int chunkSize)
         {
             // Define some temporary information about the file being imported
             string fileName = Path.GetFileName(filePath);
@@ -1031,7 +1145,7 @@ namespace DataCore
             else { fileExt = Path.GetExtension(fileName.Remove(0, 1)); }
 
             // Determine the path to the current files appropriate data.xxx
-            string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, GetID(fileName));
+            string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, StringCipher.GetID(fileName));
 
             // If the physical data.xxx actually exists
             if (File.Exists(dataPath))
@@ -1107,118 +1221,13 @@ namespace DataCore
         }
 
         /// <summary>
-        /// Updates the dataDirectory data.xxx stored copies of physical files in filePaths
-        /// </summary>
-        /// <param name="index">Reference to data.000 index to be updated</param>
-        /// <param name="dataDirectory">Location of the data.xxx files</param>
-        /// <param name="filePaths">Array of file paths for physical files</param>
-        /// <param name="chunkSize">Size (in bytes) to process each iteration of the write loop</param>
-        public void UpdateFileEntries(ref List<IndexEntry> index, string dataDirectory, string[] filePaths, int chunkSize)
-        {
-            List<IndexEntry> tempIndex = Create(filePaths);
-
-            OnTotalMaxDetermined(new TotalMaxArgs(8, true));
-
-            // Foreach dataId filter the referenced index
-            for (int dataId = 1; dataId <= 8; dataId++)
-            {
-                OnTotalProgressChanged(new TotalChangedArgs(dataId, string.Format("Updating Files in data.00{0}", dataId)));
-
-                List<IndexEntry> filteredIndex = GetEntriesByDataId(ref tempIndex, dataId, SortType.Size);
-
-                for (int entryIdx = 0; entryIdx < filteredIndex.Count; entryIdx++)
-                {
-                    IndexEntry currentEntry = filteredIndex[entryIdx];
-
-                    // Grab the original copy from referenced index
-                    IndexEntry originalEntry = index.Find(i => i.Name == currentEntry.Name);
-
-                    if (originalEntry != null)
-                    {
-                        // Determine the path to the current files appropriate data.xxx
-                        string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, GetID(currentEntry.Name));
-
-                        if (File.Exists(dataPath))
-                        {
-                            using (FileStream fs = new FileStream(dataPath, FileMode.Open, FileAccess.Write))
-                            {
-                                string fileName = currentEntry.Name;
-                                string fileExt = Path.GetExtension(fileName);
-
-                                // Define the file path to the file being processed
-                                string filePath = null;
-                                bool filePathsEncoded = IsEncoded(Path.GetFileName(filePaths[0]));
-                                if (!IsEncoded(fileName) && filePathsEncoded) { filePath = filePaths.ToList().Find(f => f.Contains(EncodeName(fileName))); }
-                                else if (IsEncoded(fileName) && !filePathsEncoded) { filePath = filePaths.ToList().Find(f => f.Contains(DecodeName(fileName))); }
-                                else if (IsEncoded(fileName) && filePathsEncoded || !IsEncoded(fileName) && !filePathsEncoded) { filePath = filePaths.ToList().Find(f => f.Contains(fileName)); }
-                                
-                                // If the physical file exists
-                                if (File.Exists(filePath))
-                                {
-                                    bool append = false;
-
-                                    // Load it into a byte array
-                                    byte[] fileBytes = File.ReadAllBytes(filePath);
-
-                                    OnCurrentMaxDetermined(new CurrentMaxArgs(fileBytes.Length));
-
-                                    // Check if the new file is bigger than the old file
-                                    if (fileBytes.Length > originalEntry.Length) { append = true; }
-
-                                    // Based on append bool set the position of the filestream (data.xxx file)
-                                    // Also update the originalEntry offset
-                                    if (append)
-                                    {
-                                        fs.Position = fs.Length;
-                                        originalEntry.Offset = fs.Position;
-                                    }
-                                    else { fs.Position = originalEntry.Offset; }
-
-                                    // Update originalEntry length
-                                    originalEntry.Length = fileBytes.Length;
-
-                                    // If the fileBytes need to be encrypted do so
-                                    if (XOR.Encrypted(fileExt.ToUpper())) { byte b = 0; XOR.Cipher(ref fileBytes, ref b); }
-
-                                    // If no chunkSize is provided, generate default
-                                    if (chunkSize == 0) { chunkSize = Math.Max(64000, (int)(fileBytes.Length * .02)); }
-
-                                    using (BinaryWriter bw = new BinaryWriter(fs, encoding, true))
-                                    {
-                                        // Iterate through the fileByte array writing the chunkSize to fs and reporting current position in
-                                        // the array to the caller via CurrentProgress events
-                                        for (int byteCount = 0; byteCount < fileBytes.Length; byteCount += Math.Min(fileBytes.Length - byteCount, chunkSize))
-                                        {
-                                            bw.Write(fileBytes, byteCount, Math.Min(fileBytes.Length - byteCount, chunkSize));
-                                            OnCurrentProgressChanged(new CurrentChangedArgs(byteCount, ""));
-                                        }
-                                    }
-
-                                    fileBytes = null;
-                                }
-                                else { OnError(new ErrorArgs(string.Format("[UpdateFileEntries] Cannot locate update file: {0}", filePath))); }
-                            }
-                        }
-                        else { OnError(new ErrorArgs(string.Format("[UpdateFileEntries] Cannot locate data file: {0}", dataPath))); }
-                    }
-                    else { OnError(new ErrorArgs(string.Format("[UpdateFileEntries] Cannot locate entry for {0} in referenced index", currentEntry.Name))); }
-
-                    OnCurrentProgressReset(new CurrentResetArgs(true));
-                }
-            }
-
-            OnTotalProgressReset(new TotalResetArgs(false));
-            GC.Collect();
-        }
-
-        /// <summary>
         /// Creates a file entry that does not exist in the referenced data.000 index
         /// </summary>
         /// <param name="index">Reference to data.000 index to be updated</param>
         /// <param name="dataDirectory">Location of the data.xxx files</param>
         /// <param name="filePath">Location of the file being imported</param>
         /// <param name="chunkSize">Size (in bytes) to process each iteration of the write loop</param>
-        public void ImportFileEntry(ref List<IndexEntry> index, string dataDirectory, string filePath, int chunkSize)
+        public void ImportFileEntry(List<IndexEntry> index, string dataDirectory, string filePath, int chunkSize)
         {
             // If the file being imported exists
             if (File.Exists(filePath))
@@ -1227,7 +1236,7 @@ namespace DataCore
                 string fileName = Path.GetFileName(filePath);
                 string fileExt = IsEncoded(fileName) ? Path.GetExtension(DecodeName(fileName)).Remove(0, 1) : Path.GetExtension(fileName).Remove(0, 1);
                 long fileLen = new FileInfo(filePath).Length;
-                int dataId = GetID(fileName);
+                int dataId = StringCipher.GetID(fileName);
 
                 OnCurrentMaxDetermined(new CurrentMaxArgs(fileLen));
 
@@ -1274,7 +1283,7 @@ namespace DataCore
                             // Add the new indexEntry to the referenced data.000 index
                             index.Add(new IndexEntry
                             {
-                                Name = indexName(fileName),
+                                Name = StringCipher.Encode(fileName),
                                 Offset = offset,
                                 Length = (int)fileLen,
                                 DataID = dataId
@@ -1329,15 +1338,11 @@ namespace DataCore
 
             if (Directory.Exists(dumpDirectory))
             {
-                OnTotalMaxDetermined(new TotalMaxArgs(8, true));
-
                 // Build new data.000
                 string[] extDirectories = Directory.GetDirectories(dumpDirectory);
 
-                OnCurrentMaxDetermined(new CurrentMaxArgs(extDirectories.Length));
-
                 // Create a new index of the dumpDirectory
-                index = Create(dumpDirectory);
+                index = New(dumpDirectory);
 
                 // Issue a reset to the CurrentProgressbar
                 OnCurrentProgressReset(new CurrentResetArgs(true));
@@ -1345,10 +1350,10 @@ namespace DataCore
                 // Foreach data.xxx file (1-8)
                 for (int dataId = 1; dataId <= 8; dataId++)
                 {
-                    OnTotalProgressChanged(new TotalChangedArgs(dataId, string.Format("Building data.00{0}", dataId)));
+                    OnMessage(new ConsoleMessageArgs(string.Format("Building data.00{0}...", dataId)));
 
                     // Filter down the new data.000 into the current dataId only
-                    List<IndexEntry> filteredIndex = GetEntriesByDataId(ref index, dataId, SortType.Size);
+                    List<IndexEntry> filteredIndex = GetEntriesByDataId(index, dataId, SortType.Size);
 
                     OnCurrentMaxDetermined(new CurrentMaxArgs(filteredIndex.Count));
 
@@ -1370,7 +1375,7 @@ namespace DataCore
 
                                 fileEntry.Offset = fs.Position;
 
-                                OnCurrentProgressChanged(new CurrentChangedArgs(curFileIdx, string.Format("Packing file {0}", fileEntry.Name)));
+                                OnCurrentProgressChanged(new CurrentChangedArgs(curFileIdx, string.Empty));
 
                                 // Determine the path to the file on the physical disk
                                 string filePath = string.Format(@"{0}/{1}/{2}", dumpDirectory, Path.GetExtension(fileEntry.Name).ToUpper().Remove(0, 1), fileEntry.Name);
@@ -1390,8 +1395,6 @@ namespace DataCore
 
                     OnCurrentProgressReset(new CurrentResetArgs(true));
                 }
-
-                OnTotalProgressReset(new TotalResetArgs(false));
             }
             else { OnError(new ErrorArgs(string.Format("[BuildDataFiles] Cannot locate dump directory at: {0}", dumpDirectory))); }
 
@@ -1407,39 +1410,40 @@ namespace DataCore
         /// <param name="dataDirectory">Location of the data.xxx files</param>
         /// <param name="dataId">Id of the data.xxx file to be rebuilt</param>
         /// <param name="buildDirectory">Location of build folder (e.g. client/output/data-files/)</param>
-        public void RebuildDataFile(ref List<IndexEntry> index, string dataDirectory, int dataId, string buildDirectory)
+        public void RebuildDataFile(string dataDirectory, int dataId, string buildDirectory)
         {
-            List<IndexEntry> filteredIndex = GetEntriesByDataId(ref index, dataId, SortType.Offset);
+            List<IndexEntry> filteredIndex = GetEntriesByDataId(Index, dataId, SortType.Offset);
 
             string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, dataId);
 
             if (File.Exists(dataPath))
             {
-                // TODO: Pass in chunkSize
                 if (makeBackups) { createBackup(dataPath, Convert.ToInt32(new FileInfo(dataPath).Length * 0.02)); }
 
                 OnMessage(new ConsoleMessageArgs(string.Format("Writing new data.00{0}...", dataId), true, 1, false, 0));
 
                 OnCurrentMaxDetermined(new CurrentMaxArgs(filteredIndex.Count));
 
+                // Open the data.xxx file in inFS
                 using (FileStream inFS = new FileStream(dataPath, FileMode.Open))
                 {
+                    // Create the output file
                     using (FileStream outFS = File.Create(string.Format(@"{0}_NEW", dataPath)))
                     {
+                        // Foreach file in data.xxx
                         for (int idx = 0; idx < filteredIndex.Count; idx++)
                         {
                             IndexEntry entry = filteredIndex[idx];
-                            IndexEntry originalEntry = GetEntry(ref index, entry.Name);
 
-                            if (originalEntry != null)
+                            if (EntryExists(entry.Name))
                             {
-                                inFS.Position = entry.Offset;
+                                inFS.Seek(entry.Offset, SeekOrigin.Begin);
                                 byte[] inFile = new byte[entry.Length];
                                 inFS.Read(inFile, 0, entry.Length);
 
                                 if (inFile.Length > 0)
                                 {
-                                    originalEntry.Offset = outFS.Position;
+                                    UpdateEntryOffset(entry.Name, outFS.Position);
                                     outFS.Write(inFile, 0, inFile.Length);
                                 }
                                 else { OnError(new ErrorArgs(string.Format("[RebuildDataFile] failed to buffer file from the original data file!"))); }
@@ -1461,26 +1465,13 @@ namespace DataCore
         #region Misc Methods
 
         /// <summary>
-        /// Calculates the id of the data.xxx file a particular hash name belongs to
+        /// Initializes the LUA engine used to load dCore.lua configurations
         /// </summary>
-        /// <param name="name">Hashed/Unhashed name being searched</param>
-        /// <param name="isHashed">Determines if name is hashed or not</param>
-        /// <returns>Data.00x id</returns>
-        public int GetID(string name)
+        public void Initialize()
         {
-            byte[] bytes;
-            if (StringCipher.IsEncoded(name)) { bytes = encoding.GetBytes(name.ToLower()); }
-            else { bytes = encoding.GetBytes(StringCipher.Encode(name).ToLower()); }
-            int num = 0;
-            for (int i = 0; i < bytes.Length; i++)
-            {
-                num = (num << 5) - num + (int)bytes[i];
-            }
-            if (num < 0)
-            {
-                num *= -1;
-            }
-            return num % 8 + 1;
+            Extensions.ValidExtensions = luaIO.GetExtensions();
+            Extensions.GroupExtensions = luaIO.GetGroupExports();
+            XOR.UnencryptedExtensions = luaIO.GetUnencryptedExtensions();
         }
 
         /// <summary>
@@ -1503,16 +1494,6 @@ namespace DataCore
         /// <param name="name">Name to be unhashed</param>
         /// <returns>Unhashed name</returns>
         public string DecodeName(string name) { return StringCipher.Decode(name); }
-
-        protected string indexName(string name)
-        {
-            bool isEncoded = IsEncoded(name);
-
-            if (NamesEncoded && !isEncoded) { return EncodeName(name); }
-            else if (!NamesEncoded && isEncoded) { return DecodeName(name); }
-            else if (NamesEncoded && isEncoded ||!NamesEncoded && !isEncoded) { return name; }
-            else { return null; }
-        }
 
         protected void createBackup(string dataPath, int chunkSize)
         {

@@ -12,7 +12,7 @@ namespace DataCore.Functions
         /// <summary>
         /// Legend of non-encrypted file extensions (files that will not be encoded during patching)
         /// </summary>
-        static List<string> unencryptedExt = new List<string> { "mp3", "ogg", "raw", "dds", "tga", "naf", "nx3", "cob", "nfm" };
+        public static List<string> UnencryptedExtensions { get; set; } = new List<string> { "mp3", "ogg", "raw", "dds", "tga", "naf", "nx3", "cob", "nfm" };
 
         /// <summary>
         /// Table of bytes to use for encoding files during patching
@@ -550,7 +550,7 @@ namespace DataCore.Functions
         /// <returns>true/false</returns>
 		public static bool Encrypted(string ext)
 		{
-            return !unencryptedExt.Contains(ext);
+            return !UnencryptedExtensions.Contains(ext);
 		}
 	}
 }
