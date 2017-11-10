@@ -11,19 +11,16 @@ using DataCore.Structures;
 /// based on the works of Glandu2 and xXExiledXx two of my greatest inspirations in Rappelz Developement
 /// Please report suggestions and bugs to iSmokeDrow@gmail.com
 /// Reminder: This dll uses .NET 4.5.1
-/// <version>3.0.0.5</version>
+/// <version>4.0.0</version>
 /// </summary>
 /// TODO: Add tracking of orphaned files (maybe for a quick versioning system?)
 /// TODO: Update method UpdateFileEntry/UpdateFileEntries to store updated file (whose new file gets appended) to data.blk
-/// TODO: Add overridable (during construction?) validExt list
 /// TODO: Add support for loading / displaying / saving data.blk
-/// TODO: Add RebuildDataFile() method (will load file from data.xxx and write it directly into new data.xxx)
 namespace DataCore
 {
     // TODO: Add 'RemoveDuplicates' (ascii/non-ascii) <reduce client size?>
     // TODO: Add 'RebuildDataFile' function
     // TODO: Add 'CompareFiles' function (to compare external file with data file)
-    // TODO: Remove useless ref param from methods
 
     /// <summary>
     /// Provides interactive access to the Rappelz Data.XXX File Management System
@@ -38,6 +35,9 @@ namespace DataCore
         /// </summary>
         internal readonly Encoding encoding = Encoding.Default;
 
+        /// <summary>
+        /// List storing all IndexEntrys inside of data.000
+        /// </summary>
         public List<IndexEntry> Index;
 
         /// <summary>
@@ -61,6 +61,10 @@ namespace DataCore
 
         #region Event Delegates
 
+        /// <summary>
+        /// Raises an event that informs the caller of a message that has occured
+        /// </summary>
+        /// <param name="c"></param>
         protected void OnMessage(ConsoleMessageArgs c) { MessageOccured?.Invoke(this, c); }
 
         /// <summary>
@@ -229,13 +233,8 @@ namespace DataCore
         /// Reads the data.000 contents into a List of IndexEntries (note toggling on decodeNames will decrease speed)
         /// </summary>
         /// <param name="path">Path to the data.xxx files (optional)</param>
-        /// <param name="decodeNames">Determines if the file names should be decoded during load</param>
-        /// <param name="reportInterval">How many bytes should be processed before reporting</param>
-        /// <returns>A populated index or null</returns>
-        public void Load(string path, bool decodeNames)
+        public void Load(string path)
         {
-            bool isBlank = !path.Contains(".000");
-
             Index = new List<IndexEntry>();
 
             byte b = 0;
@@ -248,7 +247,9 @@ namespace DataCore
                 {
                     OnCurrentMaxDetermined(new CurrentMaxArgs(ms.Length));
 
-                    while (ms.Position < ms.Length)
+                    long len = ms.Length;
+
+                    while (ms.Position < len)
                     {
                         IndexEntry dataIndexEntry = new IndexEntry();
 
@@ -264,10 +265,9 @@ namespace DataCore
                         ms.Read(value, 0, value.Length);
                         XOR.Cipher(ref value, ref b);
 
-                        dataIndexEntry.Name = (decodeNames) ? StringCipher.Decode(bytes) : Encoding.Default.GetString(bytes);
+                        dataIndexEntry.Hash = bytes;
                         dataIndexEntry.Offset = BitConverter.ToInt32(value, 0);
                         dataIndexEntry.Length = BitConverter.ToInt32(value, 4);
-                        dataIndexEntry.DataID = StringCipher.GetID(bytes);
                         Index.Add(dataIndexEntry);
 
                         if ((ms.Position - bytesRead) >= 50000)
@@ -286,7 +286,6 @@ namespace DataCore
         /// <summary>
         /// Saves the provided indexList into a ready to use data.000 index
         /// </summary>
-        /// <param name="index">Reference to data.000 index</param>
         /// <param name="buildDirectory">Location to build the new data.000 at</param>
         /// <param name="isBlankIndex">Determines if the index is a Blank Space Index</param>
         /// <returns>bool value indicating success or failure</returns>
@@ -312,7 +311,7 @@ namespace DataCore
                 {
                     IndexEntry indexEntry = Index[idx];
 
-                    string name = IsEncoded(indexEntry.Name) ? indexEntry.Name : EncodeName(indexEntry.Name);
+                    string name = StringCipher.IsEncoded(indexEntry.Name) ? indexEntry.Name : StringCipher.Encode(indexEntry.Name);
                     byte[] buffer = new byte[] { Convert.ToByte(name.Length) };
                     XOR.Cipher(ref buffer, ref b);
                     bw.Write(buffer);
@@ -362,7 +361,6 @@ namespace DataCore
         /// <summary>
         /// Returns a bool indicating if the matching entry exists in the referenced index
         /// </summary>
-        /// <param name="index">Reference to data.000 index</param>
         /// <param name="name">File name being searched for</param>
         /// <returns>true or false</returns>
         public bool EntryExists(string name) { return Index.Find(i => i.Name == name) != null; }
@@ -389,7 +387,6 @@ namespace DataCore
         /// <summary>
         /// Returns an IndexEntry based on it's [UNHASHED] name
         /// </summary>
-        /// <param name="index">Reference to data.000 index</param>
         /// <param name="name">File name being searched for</param>
         /// <returns>IndexEntry of name</returns>
         public IndexEntry GetEntry(string name) { return Index.Find(i => i.Name == name); }
@@ -397,7 +394,6 @@ namespace DataCore
         /// <summary>
         /// Returns an IndexEntry based on it's dataId and offset
         /// </summary>
-        /// <param name="index">Reference to data.000 List</param>
         /// <param name="dataId">data.xxx id being searched</param>
         /// <param name="offset">offset of file in dataId being searched</param>
         /// <returns>IndexEntry of dataId and offset</returns>
@@ -442,7 +438,6 @@ namespace DataCore
         /// <summary>
         /// Returns a List of all entries whose name contains partialName
         /// </summary>
-        /// <param name="index">Reference to data.000 index</param>
         /// <param name="partialName">Partial fileName (e.g. db_) to be searched for</param>
         /// <returns>Populated List of IndexEntries</returns>
         public List<IndexEntry> GetEntriesByPartialName(string partialName) { return Index.FindAll(i => i.Name.Contains(partialName)); }
@@ -450,7 +445,6 @@ namespace DataCore
         /// <summary>
         /// Returns a List of all entries matching dataId
         /// </summary>
-        /// <param name="index">Reference to data.000 index</param>
         /// <param name="dataId">data.xxx Id being requested</param>
         /// <returns>List for data.xx{dataId}</returns>
         public List<IndexEntry> GetEntriesByDataId(int dataId) { return Index.FindAll(i => i.DataID == dataId); }
@@ -459,9 +453,8 @@ namespace DataCore
         /// Returns a filtered List of all entries matching dataId
         /// Return is sorted by sortType
         /// </summary>
-        /// <param name="index">Reference to data.000 index</param>
         /// <param name="dataId">data.xxx Id being requested</param>
-        /// <param name="sortType">Type code for how to sort return</param>
+        /// <param name="type">Type code for how to sort return</param>
         /// LEGEND:
         /// 0 = Name
         /// 1 = Offset
@@ -490,7 +483,7 @@ namespace DataCore
         /// </summary>
         /// <param name="filteredIndx">Reference to data.000 index</param>
         /// <param name="dataId">data.xxx Id being requested</param>
-        /// <param name="sortType">Type code for how to sort return</param>
+        /// <param name="type">Type code for how to sort return</param>
         /// <returns>List for data.xx{dataId}</returns>
         public List<IndexEntry> GetEntriesByDataId(List<IndexEntry> filteredIndx, int dataId, SortType type)
         {
@@ -513,7 +506,6 @@ namespace DataCore
         /// <summary>
         /// Returns a filtered List of all entries matching extension
         /// </summary>
-        /// <param name="index">data.000 index being searched</param>
         /// <param name="extension">extension being searched (e.g. dds)</param>
         /// <returns>Filtered List of extension</returns>
         public List<IndexEntry> GetEntriesByExtension(string extension) { return Index.FindAll(i => i.Name.Contains(string.Format(".{0}", extension.ToLower()))); }
@@ -521,7 +513,6 @@ namespace DataCore
         /// <summary>
         /// Returns a filtered List of all entries matching extension
         /// </summary>
-        /// <param name="index">data.000 index being searched</param>
         /// <param name="extension">extension being searched (e.g. dds)</param>
         /// <param name="sortType">Type code for how to sort return</param>
         /// LEGEND:
@@ -550,9 +541,16 @@ namespace DataCore
         }
 
         /// <summary>
+        /// Returns a filtered List of all entries matching both extension and term
+        /// </summary>
+        /// <param name="extension">Extension of desired files</param>
+        /// <param name="term">Term desired file names must contain</param>
+        /// <returns>Filtered List of files with extension whose names contain term</returns>
+        public List<IndexEntry> GetEntriesByExtension(string extension, string term) { return Index.FindAll(i => i.Name.Contains(term) && i.Name.Contains(string.Format(".{0}", extension.ToLower()))); }
+
+        /// <summary>
         /// Removes a set of entries bearing DataID = dataId from referenced data.000 index
         /// </summary>
-        /// <param name="index">Index to be altered</param>
         /// <param name="dataId">Id of file entries to be deleted</param>
         public void DeleteEntriesByDataId(int dataId) { Index.RemoveAll(i => i.DataID == dataId); }
 
@@ -560,7 +558,6 @@ namespace DataCore
         /// <summary>
         /// Removes a single entry bearing Name = name from referenced data.000 index
         /// </summary>
-        /// <param name="index">Index to be altered</param>
         /// <param name="fileName">Name of the IndexEntry being deleted</param>
         /// <param name="dataDirectory">Directory of the data.xxx files</param>
         /// <param name="dataId">ID of the data.xxx file housing this file</param>
@@ -576,7 +573,6 @@ namespace DataCore
         /// <summary>
         /// Removes a single entry bearing DataID = id and Offset = offset from referenced data.000 index
         /// </summary>
-        /// <param name="index">Index to be altered</param>
         /// <param name="id">DataID of file entry to be deleted</param>
         /// <param name="offset">Offset of file entry to be deleted</param>
         public void DeleteEntryByIdandOffset(int id, int offset) { Index.Remove(Index.Find(i => i.DataID == id && i.Offset == offset)); }
@@ -584,7 +580,6 @@ namespace DataCore
         /// <summary>
         /// Updates the offset for IndexEntry with given fileName in the referenced index
         /// </summary>
-        /// <param name="index">Index to be altered</param>
         /// <param name="fileName">Name of the IndexEntry being updated</param>
         /// <param name="offset">New offset for the IndexEntry</param>
         public void UpdateEntryOffset(string fileName, long offset)
@@ -662,7 +657,6 @@ namespace DataCore
         /// <summary>
         /// Generates an SHA512 hash for the given fileName by locating the bytes in data.XXX storage
         /// </summary>
-        /// <param name="index">Reference to loaded data.000 index</param>
         /// <param name="dataDirectory">Location of the data.xxx files</param>
         /// <param name="fileName">Name of the file to generate hash for</param>
         /// <returns>SHA512 Hash String</returns>
@@ -690,7 +684,7 @@ namespace DataCore
 
                             if (buffer.Length > 0)
                             {
-                                string ext = IsEncoded(fileName) ? Path.GetExtension(DecodeName(fileName)).Remove(0, 1).ToLower() : Path.GetExtension(fileName).Remove(0, 1);
+                                string ext = StringCipher.IsEncoded(fileName) ? Path.GetExtension(StringCipher.Decode(fileName)).Remove(0, 1).ToLower() : Path.GetExtension(fileName).Remove(0, 1);
                                 if (XOR.Encrypted(ext)) { byte b = 0; XOR.Cipher(ref buffer, ref b); }
 
                                 string hash = Hash.GetSHA512Hash(buffer, buffer.Length);
@@ -765,7 +759,6 @@ namespace DataCore
         /// <summary>
         /// Generates an MD5 hash for the given fileName by locating the bytes in data.XXX storage
         /// </summary>
-        /// <param name="index">Reference to loaded data.000 index</param>
         /// <param name="dataDirectory">Location of the data.xxx files</param>
         /// <param name="fileName">Name of the file to generate hash for</param>
         /// <returns>MD5 Hash String</returns>
@@ -896,7 +889,7 @@ namespace DataCore
                 if (outBuffer.Length > 0)
                 {
                     string fileName = Path.GetFileName(buildPath);
-                    if (IsEncoded(fileName)) { fileName = DecodeName(fileName); }
+                    if (StringCipher.IsEncoded(fileName)) { fileName = StringCipher.Decode(fileName); }
 
                     OnCurrentMaxDetermined(new CurrentMaxArgs(length));
 
@@ -1234,7 +1227,7 @@ namespace DataCore
             {
                 // Define some information about the file
                 string fileName = Path.GetFileName(filePath);
-                string fileExt = IsEncoded(fileName) ? Path.GetExtension(DecodeName(fileName)).Remove(0, 1) : Path.GetExtension(fileName).Remove(0, 1);
+                string fileExt = StringCipher.IsEncoded(fileName) ? Path.GetExtension(StringCipher.Decode(fileName)).Remove(0, 1) : Path.GetExtension(fileName).Remove(0, 1);
                 long fileLen = new FileInfo(filePath).Length;
                 int dataId = StringCipher.GetID(fileName);
 
@@ -1406,7 +1399,6 @@ namespace DataCore
         /// Rebuilds a data.xxx file potentially removing blank space created by the OEM update method.
         /// Effectiveness increases depending on amount of updates made to desired data.xxx file.
         /// </summary>
-        /// <param name="index">Reference to data.000</param>
         /// <param name="dataDirectory">Location of the data.xxx files</param>
         /// <param name="dataId">Id of the data.xxx file to be rebuilt</param>
         /// <param name="buildDirectory">Location of build folder (e.g. client/output/data-files/)</param>
@@ -1474,28 +1466,7 @@ namespace DataCore
             XOR.UnencryptedExtensions = luaIO.GetUnencryptedExtensions();
         }
 
-        /// <summary>
-        /// Determines if the provided name is currently encoded
-        /// </summary>
-        /// <param name="name">File name to check</param>
-        /// <returns></returns>
-        public bool IsEncoded(string name) { return StringCipher.IsEncoded(name); }
-
-        /// <summary>
-        /// Encodes provided name [UNHASHED]
-        /// </summary>
-        /// <param name="name">File name to be hashed</param>
-        /// <returns>Hashed name</returns>
-        public string EncodeName(string name) {  return StringCipher.Encode(name); }
-
-        /// <summary>
-        /// Decodes provided name [HASHED]
-        /// </summary>
-        /// <param name="name">Name to be unhashed</param>
-        /// <returns>Unhashed name</returns>
-        public string DecodeName(string name) { return StringCipher.Decode(name); }
-
-        protected void createBackup(string dataPath, int chunkSize)
+        void createBackup(string dataPath, int chunkSize)
         {
             string bakPath = string.Format(@"{0}_NEW", dataPath);
             string altBakPath = string.Format(@"{0}_OLD_{1}", dataPath, DateTime.Now.ToLongDateString());

@@ -4,12 +4,19 @@ using MoonSharp.Interpreter;
 
 namespace DataCore.Functions
 {
+    /// <summary>
+    /// Provided the ability to execute LUA scripts
+    /// </summary>
     public class LUA
     {
         DynValue res;
         Script engine = null;
         private string scriptCode = null;
 
+        /// <summary>
+        /// Instantiates the LUA class with provided script
+        /// </summary>
+        /// <param name="scriptCode">string containing the code of a .lua</param>
         public LUA(string scriptCode)
         {
             engine = new Script();
@@ -17,6 +24,10 @@ namespace DataCore.Functions
             this.scriptCode = scriptCode;
         }
 
+        /// <summary>
+        /// Gets the extension list stored in provided dCore.lua
+        /// </summary>
+        /// <returns>List of extensions</returns>
         public List<string> GetExtensions()
         {
             List<string> ret = new List<string>();
@@ -30,6 +41,10 @@ namespace DataCore.Functions
             return ret;
         }
 
+        /// <summary>
+        /// Gets the unencrypted extension list stored in provided dCore.lua
+        /// </summary>
+        /// <returns>List of unencrypted extensions</returns>
         public List<string> GetUnencryptedExtensions()
         {
             List<string> ret = new List<string>();
@@ -43,6 +58,10 @@ namespace DataCore.Functions
             return ret;
         }
 
+        /// <summary>
+        /// Gets the list of grouped exports stored in provided dCore.lua
+        /// </summary>
+        /// <returns>List of grouped extensions</returns>
         public Dictionary<string, List<string>> GetGroupExports()
         {
             Dictionary<string, List<string>> ret = new Dictionary<string, List<string>>();

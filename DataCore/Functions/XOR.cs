@@ -533,12 +533,16 @@ namespace DataCore.Functions
 			156
 		};
 
+        /// <summary>
+        /// Performs an crypto-ciper on given buffer
+        /// </summary>
+        /// <param name="buffer">Byte collection to be encrypted</param>
+        /// <param name="index">Index to perform encryption on buffer</param>
         public static void Cipher(ref byte[] buffer, ref byte index)
         {
             for (int i = 0; i < buffer.Length; i++)
             {
-                byte[] expr_0C_cp_0 = buffer;
-                expr_0C_cp_0[i] ^= s_CipherTable[(int)index];
+                buffer[i] ^= s_CipherTable[(int)index];
                 index++;
             }
         }

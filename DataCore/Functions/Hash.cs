@@ -4,6 +4,9 @@ using System.Security.Cryptography;
 
 namespace DataCore.Functions
 {
+    /// <summary>
+    /// Provides the ability to calculate file hashes into MD5/SHA1/SHA512
+    /// </summary>
     public class Hash
     {
         /// <summary>
@@ -20,7 +23,7 @@ namespace DataCore.Functions
         /// <summary>
         /// Gets a hash of the file using SHA1.
         /// </summary>
-        /// <param name="filePath"></param>
+        /// <param name="s">Stream to be used in calculation</param>
         /// <returns></returns>
         public static string GetSHA1Hash(Stream s)
         {
@@ -31,7 +34,7 @@ namespace DataCore.Functions
         /// <summary>
         /// Gets a hash of the file using MD5.
         /// </summary>
-        /// <param name="filePath"></param>
+        /// <param name="filePath">Path of file used in calculation</param>
         /// <returns></returns>
         public static string GetMD5Hash(string filePath)
         {
@@ -42,7 +45,7 @@ namespace DataCore.Functions
         /// <summary>
         /// Gets a hash of the file using MD5.
         /// </summary>
-        /// <param name="filePath"></param>
+        /// <param name="s">Stream used in calculation</param>
         /// <returns></returns>
         public static string GetMD5Hash(Stream s)
         {
@@ -50,6 +53,12 @@ namespace DataCore.Functions
                 return GetHash(s, md5);
         }
 
+        /// <summary>
+        /// Gets a hash of the file using MD5
+        /// </summary>
+        /// <param name="data">Data bytes used in calculation</param>
+        /// <param name="count">Count of bytes to calculate</param>
+        /// <returns></returns>
         public static string GetMD5Hash(byte[] data, int count)
         {
             using (var md5 = new MD5CryptoServiceProvider())
@@ -70,7 +79,7 @@ namespace DataCore.Functions
         /// <summary>
         /// Gets a hash of the file using SHA512.
         /// </summary>
-        /// <param name="filePath"></param>
+        /// <param name="s">Steam used in calculation</param>
         /// <returns></returns>
         public static string GetSHA512Hash(Stream s)
         {
@@ -81,7 +90,8 @@ namespace DataCore.Functions
         /// <summary>
         /// Gets a hash of the file using SHA512.
         /// </summary>
-        /// <param name="filePath"></param>
+        /// <param name="data">Data bytes used in calculation</param>
+        /// <param name="count">Count of bytes to calculate</param>
         /// <returns></returns>
         public static string GetSHA512Hash(byte[] data, int count)
         {
