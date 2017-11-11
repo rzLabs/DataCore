@@ -48,15 +48,28 @@ namespace DataCore
         LUA luaIO;
 
         #region Events
-        public event EventHandler<ConsoleMessageArgs> MessageOccured;
-        public event EventHandler<ErrorArgs> ErrorOccured;
+
+        /// <summary>
+        /// Occurs when a message is transmitted to the caller for display
+        /// </summary>
+        public event EventHandler<MessageArgs> MessageOccured;
+        /// <summary>
+        /// Occurs when a non-critical issues has been encountered
+        /// </summary>
         public event EventHandler<WarningArgs> WarningOccured;
-        public event EventHandler<TotalMaxArgs> TotalMaxDetermined;
-        public event EventHandler<TotalChangedArgs> TotalProgressChanged;
-        public event EventHandler<TotalResetArgs> TotalProgressReset;
+        /// <summary>
+        /// Occurs when the maximum progress of an operation has been determined
+        /// </summary>
         public event EventHandler<CurrentMaxArgs> CurrentMaxDetermined;
+        /// <summary>
+        /// Ocurrs when the progress value of the current operation has been changed
+        /// </summary>
         public event EventHandler<CurrentChangedArgs> CurrentProgressChanged;
+        /// <summary>
+        /// Occurs when an operation has completed and the progressbar values of the caller need to be reset
+        /// </summary>
         public event EventHandler<CurrentResetArgs> CurrentProgressReset;
+
         #endregion
 
         #region Event Delegates
@@ -65,39 +78,13 @@ namespace DataCore
         /// Raises an event that informs the caller of a message that has occured
         /// </summary>
         /// <param name="c"></param>
-        protected void OnMessage(ConsoleMessageArgs c) { MessageOccured?.Invoke(this, c); }
-
-        /// <summary>
-        /// Raises an event that informs the caller of an error that has occured
-        /// </summary>
-        /// <param name="e">Description of the error event ([Method-Name] Error-String)</param>
-        protected void OnError(ErrorArgs e) { ErrorOccured?.Invoke(this, e); }
+        protected void OnMessage(MessageArgs c) { MessageOccured?.Invoke(this, c); }
 
         /// <summary>
         /// Raises an event that informs the caller of a warning that has occured
         /// </summary>
         /// <param name="w">Description of the warning event ([Method-Name] Warning-String)</param>
         protected void OnWarning(WarningArgs w) { WarningOccured?.Invoke(this, w); }
-
-        /// <summary>
-        /// Raises an event that informs caller of current TotalProgress operations total
-        /// </summary>
-        /// <useage>Caller subscribes to event, uses event int as Progressbar.Total</useage>
-        /// <param name="t">Total number of processes to be completed</param>
-        protected void OnTotalMaxDetermined(TotalMaxArgs t) { TotalMaxDetermined?.Invoke(this, t); }
-
-        /// <summary>
-        /// Raises an event that informs the caller of total operations completed.
-        /// This event can additionally deliver a string (status update) to the caller
-        /// </summary>
-        /// <param name="t">Current process of TotalMax</param>
-        protected void OnTotalProgressChanged(TotalChangedArgs t) { TotalProgressChanged?.Invoke(this, t); }
-
-        /// <summary>
-        /// Raises an event that informs the caller that the TotalProgressbar should be reset to 0
-        /// </summary>
-        /// <param name="e">Dummy EventArg</param>
-        protected void OnTotalProgressReset(TotalResetArgs e) { TotalProgressReset?.Invoke(this, e); }
 
         /// <summary>
         /// Raises an event that informs caller of CurrentProgress operations total
@@ -127,6 +114,22 @@ namespace DataCore
         /// </summary>
         public Core() { }
 
+        /// <summary>
+        /// Instantiates the Core by providing backup and encoding for operations
+        /// </summary>
+        /// <param name="backup">Determines if this core will use the backup function</param>
+        /// <param name="encoding">Encoding to be applied to certain conversions</param>
+        public Core(bool backup, Encoding encoding)
+        {
+            makeBackups = true;
+            this.encoding = encoding;
+        }
+
+        /// <summary>
+        /// Instantiates the Core by providing backup and configuration file path
+        /// </summary>
+        /// <param name="backup">Determines if this core will use the backup function</param>
+        /// <param name="configPath">Path to the dCore.lua containing overrides</param>
         public Core(bool backup, string configPath)
         {
             makeBackups = backup;
@@ -153,7 +156,6 @@ namespace DataCore
 
         #region Data.000/BLK Methods
 
-        // TODO: Rewrite the ConsoleMessageArgs class
         /// <summary>
         /// Generates a new data.000 index based on provided dumpDirectory
         /// Expects: /tga /jpg /wav /dds style dump folder structure
@@ -164,7 +166,7 @@ namespace DataCore
         /// <returns>Populated data.000 index</returns>
         public List<IndexEntry> New(string dumpDirectory)
         {
-            OnMessage(new ConsoleMessageArgs("Creating new data.000...", false, 0, true, 1));
+            OnMessage(new MessageArgs("Creating new data.000...", false, 0, true, 1));
 
             List<IndexEntry> newIndex = new List<IndexEntry>();
 
@@ -174,7 +176,7 @@ namespace DataCore
 
                 for (int dumpDirIdx = 0; dumpDirIdx < extDirectories.Length; dumpDirIdx++)
                 {
-                    OnMessage(new ConsoleMessageArgs(string.Format("Indexing files in directory: {0}...", extDirectories[dumpDirIdx]), true, 1));
+                    OnMessage(new MessageArgs(string.Format("Indexing files in directory: {0}...", extDirectories[dumpDirIdx]), true, 1));
 
                     string[] directoryFiles = Directory.GetFiles(extDirectories[dumpDirIdx]);
 
@@ -197,9 +199,7 @@ namespace DataCore
 
                 return newIndex;
             }
-            else { OnError(new ErrorArgs(string.Format("[Create] Cannot locate dump directory at: {0}", dumpDirectory))); }
-
-            return null;
+            else { throw new FileNotFoundException(string.Format("[Create] Cannot locate dump directory at: {0}", dumpDirectory)); }
         }
 
         /// <summary>
@@ -278,7 +278,7 @@ namespace DataCore
                     }
                 }
             }
-            else { OnError(new ErrorArgs(string.Format("[Load] Cannot find data.000 at path: {0}", path))); }
+            else { throw new FileNotFoundException(string.Format("[Load] Cannot find data.000 at path: {0}", path)); }
 
             OnCurrentProgressReset(new CurrentResetArgs(true));
         }
@@ -299,7 +299,7 @@ namespace DataCore
 
             if (File.Exists(buildPath)) { File.Delete(buildPath); }
 
-            OnMessage(new ConsoleMessageArgs("Writing new data.000..."));
+            OnMessage(new MessageArgs("Writing new data.000..."));
 
             using (BinaryWriter bw = new BinaryWriter(File.Create(buildPath), Encoding.Default))
             {
@@ -514,30 +514,29 @@ namespace DataCore
         /// Returns a filtered List of all entries matching extension
         /// </summary>
         /// <param name="extension">extension being searched (e.g. dds)</param>
-        /// <param name="sortType">Type code for how to sort return</param>
-        /// LEGEND:
-        /// 0 = Name
-        /// 1 = Offset
-        /// 2 = Size
+        /// <param name="type">Type code for how to sort return</param>
         /// <returns>Filtered List of extension</returns>
-        public List<IndexEntry> GetEntriesByExtension(string extension, int sortType)
+        public List<IndexEntry> GetEntriesByExtension(string extension, SortType type)
         {
-            switch (sortType)
+            List<IndexEntry> ret = Index.FindAll(i => i.Name.Contains(string.Format(".{0}", extension.ToLower())));
+
+            switch (type)
             {
-                case 0: // Name
-                    return Index.FindAll(i => i.Name.Contains(string.Format(".{0}", extension.ToLower()))).OrderBy(i => i.Name).ToList();
+                case SortType.Name:
+                    return ret.OrderBy(i => i.Name).ToList();
 
-                case 1: // Offset
-                    return Index.FindAll(i => i.Name.Contains(string.Format(".{0}", extension.ToLower()))).OrderBy(i => i.Offset).ToList();
+                case SortType.Offset:
+                    return ret.OrderBy(i => i.Offset).ToList();
 
-                case 2: // Size
-                    return Index.FindAll(i => i.Name.Contains(string.Format(".{0}", extension.ToLower()))).OrderBy(i => i.Length).ToList();
+                case SortType.Size:
+                    return ret.OrderBy(i => i.Length).ToList();
 
-                case 3: // dataId
-                    return Index.FindAll(i => i.Name.Contains(string.Format(".{0}", extension.ToLower()))).OrderBy(i => i.DataID).ToList();
+                case SortType.DataId:
+                    return ret.OrderBy(i => i.DataID).ToList();
+
+                default:
+                    return null;
             }
-
-            return null;
         }
 
         /// <summary>
@@ -549,25 +548,51 @@ namespace DataCore
         public List<IndexEntry> GetEntriesByExtension(string extension, string term) { return Index.FindAll(i => i.Name.Contains(term) && i.Name.Contains(string.Format(".{0}", extension.ToLower()))); }
 
         /// <summary>
+        /// Returns a filtered List of all entries matching extension
+        /// </summary>
+        /// <param name="extension">extension being searched (e.g. dds)</param>
+        /// <param name="term">Term desired file names must contain</param>
+        /// <param name="type">Type code for how to sort return</param>
+        /// <returns>Filtered List of extension</returns>
+        public List<IndexEntry> GetEngtriesByExtension(string extension, string term, SortType type)
+        {
+            List<IndexEntry> ret = Index.FindAll(i => i.Name.Contains(term) && i.Name.Contains(string.Format(".{0}", extension.ToLower())));
+
+            switch (type)
+            {
+                case SortType.Name:
+                    return ret.OrderBy(i => i.Name).ToList();
+
+                case SortType.Offset:
+                    return ret.OrderBy(i => i.Offset).ToList();
+
+                case SortType.Size:
+                    return ret.OrderBy(i => i.Length).ToList();
+
+                case SortType.DataId:
+                    return ret.OrderBy(i => i.DataID).ToList();
+
+                default:
+                    return null;
+            }
+        }
+
+        /// <summary>
         /// Removes a set of entries bearing DataID = dataId from referenced data.000 index
         /// </summary>
         /// <param name="dataId">Id of file entries to be deleted</param>
         public void DeleteEntriesByDataId(int dataId) { Index.RemoveAll(i => i.DataID == dataId); }
 
-        // TODO: Update this method to not be so stupid!
         /// <summary>
         /// Removes a single entry bearing Name = name from referenced data.000 index
         /// </summary>
         /// <param name="fileName">Name of the IndexEntry being deleted</param>
         /// <param name="dataDirectory">Directory of the data.xxx files</param>
-        /// <param name="dataId">ID of the data.xxx file housing this file</param>
-        /// <param name="offset">Offset of the file being deleted</param>
-        /// <param name="length">Length of the file being deleted</param>
-        /// <param name="chunkSize">Amount of bytes to be processed before reporting</param>
-        public void DeleteEntryByName(string fileName, string dataDirectory, int dataId, long offset, long length, int chunkSize)
+        public void DeleteEntryByName(string fileName, string dataDirectory)
         {
-            DeleteFileEntry(dataDirectory, dataId, offset, length, chunkSize);
-            Index.Remove(Index.Find(i => i.Name == fileName));
+            IndexEntry entry = GetEntry(fileName);
+            DeleteFileEntry(dataDirectory, entry.DataID, entry.Offset, entry.Length);
+            Index.Remove(entry);
         }
 
         /// <summary>
@@ -584,8 +609,9 @@ namespace DataCore
         /// <param name="offset">New offset for the IndexEntry</param>
         public void UpdateEntryOffset(string fileName, long offset)
         {
-            try { Index.Find(i => i.Name == fileName).Offset = offset; }
-            catch (Exception ex) { OnError(new ErrorArgs(ex.Message)); }
+            int idx = Index.FindIndex(i => i.Name == fileName);
+            if (idx != -1) { Index[idx].Offset = offset; }
+            else { throw new Exception(string.Format("[UpdateEntryOffset] IndexEntry for {0} not found!", fileName)); }
         }
 
         #endregion
@@ -596,11 +622,12 @@ namespace DataCore
         /// Gets the collection of bytes that makes up a given file
         /// </summary>
         /// <param name="dataDirectory">Directory of the Data.XXX files</param>
+        /// <param name="fileName">Name of the target file</param>
         /// <param name="dataId">ID of the target data.xxx</param>
         /// <param name="offset">Offset of the target file</param>
         /// <param name="length">Length of the target file</param>
         /// <returns>Bytes of the target file</returns>
-        public byte[] GetFileBytes(string dataDirectory, int dataId, long offset, long length)
+        public byte[] GetFileBytes(string dataDirectory, string fileName, int dataId, long offset, long length)
         {
             byte[] buffer = new byte[length];
 
@@ -610,15 +637,25 @@ namespace DataCore
 
                 if (File.Exists(dataPath))
                 {
-                    using (FileStream fs = File.Open(dataPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    string ext = Path.GetExtension(fileName).Remove(0, 1).ToLower();
+
+                    // If the file has a valid extension (e.g. .dds)
+                    if (Extensions.IsValid(ext))
                     {
-                        fs.Seek(offset, SeekOrigin.Begin);
-                        fs.Read(buffer, 0, buffer.Length);
+                        using (FileStream fs = File.Open(dataPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                        {
+                            fs.Seek(offset, SeekOrigin.Begin);
+                            fs.Read(buffer, 0, buffer.Length);
+                        }
+
+                        // Check if this particular extension needs to be unencrypted
+                        if (XOR.Encrypted(ext)) { byte b = 0; XOR.Cipher(ref buffer, ref b); }
                     }
+                    else { OnWarning(new WarningArgs(string.Format("[GetFileBytes] {0} has an invalid extension!", fileName))); }         
                 }
-                else { OnError(new ErrorArgs(string.Format(@"[GetFileBytes] Cannot locate: {0}", dataPath))); }
+                else { throw new FileNotFoundException(string.Format(@"[GetFileBytes] Cannot locate: {0}", dataPath)); }
             }
-            else { OnError(new ErrorArgs("[GetFileBytes] dataId is invalid! Must be between 1-8")); }
+            else { throw new Exception("[GetFileBytes] dataId is invalid! Must be between 1-8"); }
 
             return buffer;
         }
@@ -641,15 +678,25 @@ namespace DataCore
 
                 if (File.Exists(dataPath))
                 {
-                    using (FileStream fs = File.Open(dataPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    string ext = Path.GetExtension(entry.Name).Remove(0, 1).ToLower();
+
+                    // If the file has a valid extension (e.g. .dds)
+                    if (Extensions.IsValid(ext))
                     {
-                        fs.Seek(entry.Offset, SeekOrigin.Begin);
-                        fs.Read(buffer, 0, buffer.Length);
+                        using (FileStream fs = File.Open(dataPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                        {
+                            fs.Seek(entry.Offset, SeekOrigin.Begin);
+                            fs.Read(buffer, 0, buffer.Length);
+                        }
+
+                        // Check if this particular extension needs to be unencrypted
+                        if (XOR.Encrypted(ext)) { byte b = 0; XOR.Cipher(ref buffer, ref b); }
                     }
+                    else { OnWarning(new WarningArgs(string.Format("[GetFileBytes] {0} has an invalid extension!", entry.Name))); }                 
                 }
-                else { OnError(new ErrorArgs(string.Format(@"[GetFileBytes] Cannot locate: {0}", dataPath))); }
+                else { throw new FileNotFoundException(string.Format(@"[GetFileBytes] Cannot locate: {0}", dataPath)); }
             }
-            else { OnError(new ErrorArgs("[GetFileBytes] dataId is invalid! Must be between 1-8")); }
+            else { throw new Exception("[GetFileBytes] dataId is invalid! Must be between 1-8"); }
 
             return buffer;
         }
@@ -694,18 +741,16 @@ namespace DataCore
                                     buffer = null;
                                     return hash;
                                 }
-                                else { OnError(new ErrorArgs(string.Format(@"Failed to generate hash for: {0}", fileName))); }
+                                else { throw new Exception(string.Format(@"[GetFileSHA512] Failed to generate hash for: {0}", fileName)); }
                             }
-                            else { OnError(new ErrorArgs("[GetFileSHA512] Failed to read file into buffer!")); }
+                            else { throw new Exception("[GetFileSHA512] Failed to read file into buffer!"); }
                         }
                     }
-                    else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] Failed to locate entry for: {0}", fileName))); }
+                    else { throw new Exception(string.Format(@"[GetFileSHA512] Failed to locate entry for: {0}", fileName)); }
                 }
-                else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] Cannot locate: {0}", dataPath))); }
+                else { throw new FileNotFoundException(string.Format(@"[GetFileSHA512] Cannot locate: {0}", dataPath)); }
             }
-            else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] dataId is 0!\nPerhaps file: {0} doesn't exist!", fileName))); }
-
-            return null;
+            else { throw new Exception(string.Format(@"[GetFileSHA512] dataId is 0!\nPerhaps file: {0} doesn't exist!", fileName)); }
         }
 
         /// <summary>
@@ -744,16 +789,14 @@ namespace DataCore
                                 buffer = null;
                                 return hash;
                             }
-                            else { OnError(new ErrorArgs(string.Format(@"Failed to generate hash for file @ offset: {0} with length: {1}", offset, length))); }
+                            else { throw new Exception(string.Format(@"Failed to generate hash for file @ offset: {0} with length: {1}", offset, length)); }
                         }
-                        else { OnError(new ErrorArgs("[GetFileSHA512] Failed to read file into buffer!")); }
+                        else { throw new Exception("[GetFileSHA512] Failed to read file into buffer!"); }
                     }
                 }
-                else { OnError(new ErrorArgs(string.Format(@"[GetFileSHA512] Cannot locate: {0}", dataPath))); }
+                else { throw new FileNotFoundException(string.Format(@"[GetFileSHA512] Cannot locate: {0}", dataPath)); }
             }
-            else { OnError(new ErrorArgs("[GetFileSHA512] dataId is 0!\nPerhaps file doesn't exist!")); }
-
-            return null;
+            else { throw new Exception("[GetFileSHA512] dataId is 0!\nPerhaps file doesn't exist!"); }
         }
 
         /// <summary>
@@ -795,18 +838,16 @@ namespace DataCore
                                     buffer = null;
                                     return hash;
                                 }
-                                else { OnError(new ErrorArgs(string.Format(@"Failed to generate hash for: {0}", fileName))); }
+                                else { throw new Exception(string.Format(@"Failed to generate hash for: {0}", fileName)); }
                             }
-                            else { OnError(new ErrorArgs("[GetFileMD5] Failed to read file into buffer!")); }
+                            else { throw new Exception("[GetFileMD5] Failed to read file into buffer!"); }
                         }
                     }
-                    else { OnError(new ErrorArgs(string.Format(@"[GetFileMD5] Failed to locate entry for: {0}", fileName))); }
+                    else { throw new Exception(string.Format(@"[GetFileMD5] Failed to locate entry for: {0}", fileName)); }
                 }
-                else { OnError(new ErrorArgs(string.Format(@"[GetFileMD5] Cannot locate: {0}", dataPath))); }
+                else { throw new FileNotFoundException(string.Format(@"[GetFileMD5] Cannot locate: {0}", dataPath)); }
             }
-            else { OnError(new ErrorArgs(string.Format(@"[GetFileMD5] dataId is 0!\nPerhaps file: {0} doesn't exist!", fileName))); }
-
-            return null;
+            else { throw new Exception(string.Format(@"[GetFileMD5] dataId is 0!\nPerhaps file: {0} doesn't exist!", fileName)); }
         }
 
         /// <summary>
@@ -845,16 +886,14 @@ namespace DataCore
                                 buffer = null;
                                 return hash;
                             }
-                            else { OnError(new ErrorArgs(string.Format(@"Failed to generate hash for file @ offset: {0} with length: {1}", offset, length))); }
+                            else { throw new Exception(string.Format(@"Failed to generate hash for file @ offset: {0} with length: {1}", offset, length)); }
                         }
-                        else { OnError(new ErrorArgs("[GetFileMD5] Failed to read file into buffer!")); }
+                        else { throw new Exception("[GetFileMD5] Failed to read file into buffer!"); }
                     }
                 }
-                else { OnError(new ErrorArgs(string.Format(@"[GetFileMD5] Cannot locate: {0}", dataPath))); }
+                else { throw new FileNotFoundException(string.Format(@"[GetFileMD5] Cannot locate: {0}", dataPath)); }
             }
-            else { OnError(new ErrorArgs("[GetFileMD5] dataId is 0!\nPerhaps file doesn't exist!")); }
-
-            return null;
+            else { throw new Exception("[GetFileMD5] dataId is 0!\nPerhaps file doesn't exist!"); }
         }
 
         /// <summary>
@@ -918,14 +957,14 @@ namespace DataCore
                         }
 
                         OnCurrentProgressReset(new CurrentResetArgs(true));
-                    }
+                    } // TODO: Clarify this message
                     else { OnWarning(new WarningArgs(string.Format("[ExportFileEntry] Skipping entry {0} with malformed extension {1}", Path.GetFileName(buildPath), fileExt))); }
                 }
-                else { OnError(new ErrorArgs("[ExportFileEntry] Failed to buffer file for export!")); }
+                else { throw new Exception("[ExportFileEntry] Failed to buffer file for export"); }
 
                 outBuffer = null;
             }
-            else { OnError(new ErrorArgs(string.Format("[ExportFileEntry] Cannot locate: {0}", dataPath))); }
+            else { throw new FileNotFoundException(string.Format("[ExportFileEntry] Cannot locate: {0}", dataPath)); }
         }
 
         /// <summary>
@@ -937,8 +976,6 @@ namespace DataCore
         /// <param name="chunkSize">Size (in bytes) to process each iteration of the write loop</param>
         public void ExportFileEntries(List<IndexEntry> filteredIndex, string dataDirectory, string buildDirectory, int chunkSize)
         {
-            OnTotalMaxDetermined(new TotalMaxArgs(8, true));
-
             // For each set of dataId files in the filteredIndex
             for (int dataId = 1; dataId <= 8; dataId++)
             {
@@ -947,8 +984,6 @@ namespace DataCore
 
                 if (tempIndex.Count > 0)
                 {
-                    OnTotalProgressChanged(new TotalChangedArgs(dataId, string.Format("Exporting selected files from data.00{0}", dataId)));
-
                     // Determine the path of the data.xxx file being exported from
                     string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, dataId);
 
@@ -1011,11 +1046,9 @@ namespace DataCore
                             }
                         }
                     }
-                    else { OnError(new ErrorArgs(string.Format("[ExportFileEntries] Cannot locate: {0}", dataPath))); }
+                    else { throw new FileNotFoundException(string.Format("[ExportFileEntries] Cannot locate: {0}", dataPath)); }
                 }
             }
-
-            OnTotalProgressReset(new TotalResetArgs(false));
 
             GC.Collect();
         }
@@ -1031,18 +1064,7 @@ namespace DataCore
         {
             // Define some temporary information about the file being imported
             string fileName = Path.GetFileName(filePath);
-            string fileExt;
-
-            // Check if fileName is encoded and decode (if needed) and determine fileName's extension
-            bool isEncoded = StringCipher.IsEncoded(index[0].Name);
-            if (!isEncoded)
-            {
-                fileName = StringCipher.Decode(fileName);
-                fileExt = Path.GetExtension(fileName.Remove(0, 1));
-            }
-            else { fileExt = Path.GetExtension(fileName.Remove(0, 1)); }
-
-            //OnWarning(new WarningArgs(string.Format("IsEncoded: {0} | fileName: {1}", isEncoded.ToString(), index[0].Name)));
+            string fileExt = Path.GetExtension(fileName.Remove(0, 1));
 
             // Determine the path to the current files appropriate data.xxx
             string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, StringCipher.GetID(fileName));
@@ -1050,8 +1072,6 @@ namespace DataCore
             // If the physical data.xxx actually exists
             if (File.Exists(dataPath))
             {
-                //OnWarning(new WarningArgs(string.Format("FileName: {0}", fileName)));
-
                 // Find the matching entry for the file (if existing)
                 IndexEntry indexEntry = index.Find(i => i.Name == fileName);
 
@@ -1107,12 +1127,11 @@ namespace DataCore
                         }
                     }
                 }
-                else { OnError(new ErrorArgs(string.Format("[UpdateFileEntry] Cannot locate entry for {0} in referenced index", fileName))); }
+                else { throw new FileNotFoundException(string.Format("[UpdateFileEntry] Cannot locate entry for {0} in referenced index", fileName)); }
             }
-            else { OnError(new ErrorArgs(string.Format("[UpdateFileEntry] Cannot locate: {0}", dataPath))); }
+            else { throw new FileNotFoundException(string.Format("[UpdateFileEntry] Cannot locate: {0}", dataPath)); }
         }
 
-        // Create overload that accepts reference to data.lgy for catalouging the blanked space
         /// <summary>
         /// Updates the dataDirectory data.xxx stored copy of the physical file at filePath
         /// </summary>
@@ -1125,17 +1144,7 @@ namespace DataCore
         {
             // Define some temporary information about the file being imported
             string fileName = Path.GetFileName(filePath);
-            string decodedFileName = string.Empty;
-            string fileExt;
-
-            // Check if fileName is encoded and decode (if needed) and determine fileName's extension
-            bool isEncoded = StringCipher.IsEncoded(fileName);
-            if (isEncoded)
-            {
-                decodedFileName = StringCipher.Decode(fileName);
-                fileExt = Path.GetExtension(decodedFileName.Remove(0, 1));
-            }
-            else { fileExt = Path.GetExtension(fileName.Remove(0, 1)); }
+            string fileExt = Path.GetExtension(fileName.Remove(0, 1));
 
             // Determine the path to the current files appropriate data.xxx
             string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, StringCipher.GetID(fileName));
@@ -1208,9 +1217,9 @@ namespace DataCore
                         }
                     }
                 }
-                else { OnError(new ErrorArgs(string.Format("[UpdateFileEntry] Cannot locate entry for {0} in referenced index", fileName))); }
+                else { throw new Exception(string.Format("[UpdateFileEntry] Cannot locate entry for {0} in referenced index", fileName)); }
             }
-            else { OnError(new ErrorArgs(string.Format("[UpdateFileEntry] Cannot locate: {0}", dataPath))); }
+            else { throw new FileNotFoundException(string.Format("[UpdateFileEntry] Cannot locate: {0}", dataPath)); }
         }
 
         /// <summary>
@@ -1285,11 +1294,11 @@ namespace DataCore
                             fileBytes = null;
                         }
                     }
-                    else { OnError(new ErrorArgs(string.Format("[ImportFileEntry] Cannot locate data file: {0}", dataPath))); }
+                    else { throw new FileNotFoundException(string.Format("[ImportFileEntry] Cannot locate data file: {0}", dataPath)); }
                 }
-                else { OnError(new ErrorArgs(string.Format("[ImportFileEntry] File entry {0} already exists!\n\nTry UpdateFileEntry instead!", fileName))); }
+                else { throw new Exception(string.Format("[ImportFileEntry] File entry {0} already exists!\n\nTry UpdateFileEntry instead!", fileName)); }
             }
-            else { OnError(new ErrorArgs(string.Format("[ImportFileEntry] Cannot locate file: {0}", filePath))); }
+            else { throw new FileNotFoundException(string.Format("[ImportFileEntry] Cannot locate file: {0}", filePath)); }
 
             OnCurrentProgressReset(new CurrentResetArgs(true));
         }
@@ -1301,12 +1310,14 @@ namespace DataCore
         /// <param name="dataId">Id of the data.xxx file to be altered</param>
         /// <param name="offset">Offset to begin writing zeros</param>
         /// <param name="length">How far to write zeros</param>
-        public void DeleteFileEntry(string dataDirectory, int dataId, long offset, long length, int chunkSize)
+        public void DeleteFileEntry(string dataDirectory, int dataId, long offset, long length)
         {
+            // TODO: Add proper error catching here
+
             // Determine the path of this particular file's data.xxx exists
             string dataPath = string.Format(@"{0}\data.00{1}", dataDirectory, dataId);
 
-            if (makeBackups) { createBackup(dataPath, chunkSize); }
+            if (makeBackups) { createBackup(dataPath, 0); }
 
             using (FileStream dataFs = File.Open(dataPath, FileMode.Open, FileAccess.ReadWrite))
             {
@@ -1343,7 +1354,7 @@ namespace DataCore
                 // Foreach data.xxx file (1-8)
                 for (int dataId = 1; dataId <= 8; dataId++)
                 {
-                    OnMessage(new ConsoleMessageArgs(string.Format("Building data.00{0}...", dataId)));
+                    OnMessage(new MessageArgs(string.Format("Building data.00{0}...", dataId)));
 
                     // Filter down the new data.000 into the current dataId only
                     List<IndexEntry> filteredIndex = GetEntriesByDataId(index, dataId, SortType.Size);
@@ -1381,7 +1392,7 @@ namespace DataCore
                                     ((IndexEntry)index.Find(i => i.Name == fileEntry.Name)).Offset = fs.Position;
                                     bw.Write(fileBytes);
                                 }
-                                else { OnError(new ErrorArgs(string.Format("[BuildDataFiles] Cannot locate: {0}", filePath))); }
+                                else { throw new FileNotFoundException(string.Format("[BuildDataFiles] Cannot locate: {0}", filePath)); }
                             }
                         }
                     }
@@ -1389,7 +1400,7 @@ namespace DataCore
                     OnCurrentProgressReset(new CurrentResetArgs(true));
                 }
             }
-            else { OnError(new ErrorArgs(string.Format("[BuildDataFiles] Cannot locate dump directory at: {0}", dumpDirectory))); }
+            else { throw new FileNotFoundException(string.Format("[BuildDataFiles] Cannot locate dump directory at: {0}", dumpDirectory)); }
 
             GC.Collect();
             return index;
@@ -1412,7 +1423,7 @@ namespace DataCore
             {
                 if (makeBackups) { createBackup(dataPath, Convert.ToInt32(new FileInfo(dataPath).Length * 0.02)); }
 
-                OnMessage(new ConsoleMessageArgs(string.Format("Writing new data.00{0}...", dataId), true, 1, false, 0));
+                OnMessage(new MessageArgs(string.Format("Writing new data.00{0}...", dataId), true, 1, false, 0));
 
                 OnCurrentMaxDetermined(new CurrentMaxArgs(filteredIndex.Count));
 
@@ -1438,16 +1449,16 @@ namespace DataCore
                                     UpdateEntryOffset(entry.Name, outFS.Position);
                                     outFS.Write(inFile, 0, inFile.Length);
                                 }
-                                else { OnError(new ErrorArgs(string.Format("[RebuildDataFile] failed to buffer file from the original data file!"))); }
+                                else { throw new Exception(string.Format("[RebuildDataFile] failed to buffer file from the original data file!")); }
                             }
-                            else { OnError(new ErrorArgs(string.Format("[RebuildDataFile] failed to find original entry for {0} in the index!", entry.Name))); }
+                            else { throw new Exception(string.Format("[RebuildDataFile] failed to find original entry for {0} in the index!", entry.Name)); }
 
                             OnCurrentProgressChanged(new CurrentChangedArgs(idx, ""));
                         }
                     }
                 }
             }
-            else { OnError(new ErrorArgs(string.Format("[RebuildDataFile] Cannot locate data file: {0}", dataPath))); }
+            else { throw new FileNotFoundException(string.Format("[RebuildDataFile] Cannot locate data file: {0}", dataPath)); }
 
             OnCurrentProgressReset(new CurrentResetArgs(true));
         }
@@ -1459,7 +1470,7 @@ namespace DataCore
         /// <summary>
         /// Initializes the LUA engine used to load dCore.lua configurations
         /// </summary>
-        public void Initialize()
+        public void LoadConfig()
         {
             Extensions.ValidExtensions = luaIO.GetExtensions();
             Extensions.GroupExtensions = luaIO.GetGroupExports();
@@ -1474,10 +1485,10 @@ namespace DataCore
             if (File.Exists(bakPath))
             {
                 File.Move(bakPath, altBakPath);
-                OnMessage(new ConsoleMessageArgs("Previous BAK was detected and renamed.", true, 1, true, 1));
+                OnMessage(new MessageArgs("Previous BAK was detected and renamed.", true, 1, true, 1));
             }
 
-            OnMessage(new ConsoleMessageArgs("Creating backup...", true));
+            OnMessage(new MessageArgs("Creating backup...", true));
 
             using (FileStream inFS = new FileStream(dataPath, FileMode.Open, FileAccess.Read, FileShare.Read))
             {

@@ -2,19 +2,37 @@
 
 namespace DataCore
 {
-    public class ConsoleMessageArgs : EventArgs
+    /// <summary>
+    /// GUI / Console compatible message containing the message string and formatting information
+    /// </summary>
+    public class MessageArgs : EventArgs
     {
+        /// <summary>
+        /// String containing the message
+        /// </summary>
         public string Message { get; set; }
+        /// <summary>
+        /// Determines if this message needs to be tabbed [Console Only]
+        /// </summary>
         public bool Tab { get; set; }
+        /// <summary>
+        /// Determines the amount of tabs to be prepended to the message [Console Only]
+        /// </summary>
         public int TabCount { get; set; }
+        /// <summary>
+        /// Determines if this message needs to contain a line break [Console Only]
+        /// </summary>
         public bool Break { get; set; }
+        /// <summary>
+        /// Determines the amount of line breaks to be appended to the message [Console Only]
+        /// </summary>
         public int BreakCount { get; set; }
 
-        public ConsoleMessageArgs(string message) { Message = message; Tab = false; TabCount = 0; }
-        public ConsoleMessageArgs(string message, bool tab) { Message = message; Tab = true; TabCount = 1; }
-        public ConsoleMessageArgs(string message, bool tab, int tabCount) { Message = message; Tab = true; TabCount = tabCount; }
-        public ConsoleMessageArgs(string message, bool tab, int tabCount, bool @break) { Message = message; Tab = true; TabCount = tabCount;  Break = @break;  BreakCount = 1; }
-        public ConsoleMessageArgs(string message, bool tab, int tabCount, bool @break, int breakCount) { Message = message; Tab = true; TabCount = tabCount; Break = @break; BreakCount = breakCount; }
+        public MessageArgs(string message) { Message = message; Tab = false; TabCount = 0; }
+        public MessageArgs(string message, bool tab) { Message = message; Tab = true; TabCount = 1; }
+        public MessageArgs(string message, bool tab, int tabCount) { Message = message; Tab = true; TabCount = tabCount; }
+        public MessageArgs(string message, bool tab, int tabCount, bool @break) { Message = message; Tab = true; TabCount = tabCount;  Break = @break;  BreakCount = 1; }
+        public MessageArgs(string message, bool tab, int tabCount, bool @break, int breakCount) { Message = message; Tab = true; TabCount = tabCount; Break = @break; BreakCount = breakCount; }
     }
 
     /// <summary>
@@ -40,67 +58,6 @@ namespace DataCore
         public string Warning { get; set; }
 
         public WarningArgs(string warning) { Warning = warning; }
-    }
-
-    /// <summary>
-    /// Houses arguments passed to caller during raising of TotalMaxDetermined Event
-    /// </summary>
-    public class TotalMaxArgs : EventArgs
-    {
-        /// <summary>
-        /// Maximum value that should be set to a "Total" Progressbar.Maximum
-        /// </summary>
-        public int Maximum { get; set; }
-
-        /// <summary>
-        /// Indicates if the DataCore is processing a group of tasks or reporting a single progresses total
-        /// </summary>
-        public bool IsTasks { get; set; }
-
-        /// <summary>
-        /// Constructor for the TotalMaxArgs, inheriting from EventArgs
-        /// Assigns the Maximum value
-        /// </summary>
-        /// <param name="maximum"></param>
-        public TotalMaxArgs(int maximum, bool isTasks) { Maximum = maximum; IsTasks = isTasks; }
-    }
-
-    /// <summary>
-    /// Houses arguments passed to caller during raising of TotalProgressChanged Event
-    /// </summary>
-    public class TotalChangedArgs : EventArgs
-    {
-        /// <summary>
-        /// Value that should be assigned to a "Total" Progressbar.Value
-        /// </summary>
-        public int Value { get; set; }
-
-        /// <summary>
-        /// Status that should be assigned to a "Total Status" label.Text
-        /// </summary>
-        public string Status { get; set; }
-
-        public bool IgnoreStatus { get; set; }
-
-        /// <summary>
-        /// Constructor for TotalChangesArgs, inherits from EventArgs
-        /// Assigns Value and Status
-        /// </summary>
-        /// <param name="value"></param>
-        /// <param name="status"></param>
-        public TotalChangedArgs(int value, string status)
-        {
-            Value = value;
-            Status = status;
-            IgnoreStatus = (status.Length > 0) ? false : true;
-        }
-    }
-
-    public class TotalResetArgs : EventArgs
-    {
-        public bool WriteOK { get; set; }
-
-        public TotalResetArgs(bool writeOK) { WriteOK = writeOK; }
     }
 
     /// <summary>
@@ -137,10 +94,20 @@ namespace DataCore
         public CurrentChangedArgs(long value, string status) { Value = value; Status = status; }
     }
 
+    /// <summary>
+    /// Houses arguments intended for Console applications
+    /// </summary>
     public class CurrentResetArgs : EventArgs
     {
+        /// <summary>
+        /// Determines if [OK] should be appended to the current line of a console when this event occurs
+        /// </summary>
         public bool WriteOK { get; set; }
 
+        /// <summary>
+        /// Constructor for the CurrentResetArgs, inheriting from EventArgs
+        /// </summary>
+        /// <param name="writeOK">Determines if the [OK] should be appended</param>
         public CurrentResetArgs(bool writeOK) { WriteOK = writeOK; }
     }
 }
