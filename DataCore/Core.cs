@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using DataCore.Functions;
 using DataCore.Structures;
 
@@ -136,6 +137,12 @@ namespace DataCore
             luaIO = new LUA(IO.LoadConfig(configPath));
         }
 
+        /// <summary>
+        /// Instantiates the Core by providing file encoding and backup and configPath
+        /// </summary>
+        /// <param name="backup">Determines if this core will use the backup function</param>
+        /// <param name="encoding">Encoding to be applied to certain conversions</param>
+        /// <param name="configPath">Path to the dCore.lua containing overrides</param>
         public Core(Encoding encoding, bool backup, string configPath)
         {
             makeBackups = backup;
@@ -440,7 +447,7 @@ namespace DataCore
         /// </summary>
         /// <param name="partialName">Partial fileName (e.g. db_) to be searched for</param>
         /// <returns>Populated List of IndexEntries</returns>
-        public List<IndexEntry> GetEntriesByPartialName(string partialName) { return Index.FindAll(i => i.Name.Contains(partialName)); }
+        public List<IndexEntry> GetEntriesByPartialName(string partialName) { return Index.FindAll(i => Regex.Match(i.Name, partialName.Replace("*", ".")).Success); }
 
         /// <summary>
         /// Returns a List of all entries matching dataId
@@ -554,7 +561,7 @@ namespace DataCore
         /// <param name="term">Term desired file names must contain</param>
         /// <param name="type">Type code for how to sort return</param>
         /// <returns>Filtered List of extension</returns>
-        public List<IndexEntry> GetEngtriesByExtension(string extension, string term, SortType type)
+        public List<IndexEntry> GetEntriesByExtension(string extension, string term, SortType type)
         {
             List<IndexEntry> ret = Index.FindAll(i => i.Name.Contains(term) && i.Name.Contains(string.Format(".{0}", extension.ToLower())));
 
@@ -617,6 +624,17 @@ namespace DataCore
         #endregion
 
         #region File Methods
+
+        /// <summary>
+        /// Gets the collection of bytes that makes up a given file
+        /// </summary>
+        /// <param name="dataDirectory">Location of the data.xxx files</param>
+        /// <param name="fileName">Name of the file to generate hash for</param>
+        public byte[] GetFileBytes(string dataDirectory, string fileName)
+        {
+            var fileEntry = GetEntry(fileName);
+            return GetFileBytes(dataDirectory, Path.GetExtension(fileName), fileEntry.DataID, fileEntry.Offset, fileEntry.Length);
+        }
 
         /// <summary>
         /// Gets the collection of bytes that makes up a given file
