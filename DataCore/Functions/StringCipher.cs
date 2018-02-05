@@ -169,8 +169,8 @@ namespace DataCore.Functions
         }
 
         #endregion
-
-        public static int GetID(string hash) { return GetID(Encoding.ASCII.GetBytes(hash)); }
+      
+        public static int GetID(string value) { return GetID(IsEncoded(value) ? value : Encode(value)); }
 
         public static int GetID(byte[] hash)
         {
@@ -178,13 +178,13 @@ namespace DataCore.Functions
 
             if (hash == null) return 1;
 
-            for (int i = 0; i < hash.Length; i++) { checksum = checksum * 31 + local_tolower(hash[i]); }
+            for (int i = 0; i < hash.Length; i++) { checksum = checksum * 31 + toLower(hash[i]); }
 
             if (checksum < 0) { checksum = -checksum; }
             return (checksum & 0x07) + 1;
         }
 
-        static int local_tolower(byte b)
+        static int toLower(byte b)
         {
             if (b >= 'A' && b <= 'Z') { return b - ('A' - 'a'); }
             

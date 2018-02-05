@@ -12,17 +12,12 @@ using DataCore.Structures;
 /// based on the works of Glandu2 and xXExiledXx two of my greatest inspirations in Rappelz Developement
 /// Please report suggestions and bugs to iSmokeDrow@gmail.com
 /// Reminder: This dll uses .NET 4.5.1
-/// <version>4.0.0</version>
+/// <version>4.2.0</version>
 /// </summary>
-/// TODO: Add tracking of orphaned files (maybe for a quick versioning system?)
-/// TODO: Update method UpdateFileEntry/UpdateFileEntries to store updated file (whose new file gets appended) to data.blk
-/// TODO: Add support for loading / displaying / saving data.blk
 namespace DataCore
 {
     // TODO: Add 'RemoveDuplicates' (ascii/non-ascii) <reduce client size?>
-    // TODO: Add 'RebuildDataFile' function
     // TODO: Add 'CompareFiles' function (to compare external file with data file)
-
     /// <summary>
     /// Provides interactive access to the Rappelz Data.XXX File Management System
     /// </summary>
@@ -382,6 +377,66 @@ namespace DataCore
         }
 
         /// <summary>
+        /// Locates all IndexEntry with matching criteria and returns them as a list
+        /// </summary>
+        /// <param name="fieldName">Operand 1 of the search (e.g. name, data_id)</param>
+        /// <param name="op">Operator for the search (e.g. ==, >= etc..)</param>
+        /// <param name="criteria">Operand 2 of the search (e.g. "db_")</param>
+        /// <returns>List of matching IndexEntry</returns>
+        public List<IndexEntry> FindAll(string fieldName, string op, object criteria)
+        {
+            if (fieldName == "name")
+            {
+                switch (op)
+                {
+                    case "==": return Index.FindAll(i => i.Name == (string)criteria);
+                    case "LIKE": return Index.FindAll(i => i.Name.Contains((string)criteria));
+                }
+            }
+            else if (fieldName == "offset")
+            {
+                long val = (long)criteria;
+
+                switch (op)
+                {                  
+                    case "==": return Index.FindAll(i=>i.Offset == val);
+                    case ">": return Index.FindAll(i => i.Offset > val);
+                    case ">=": return Index.FindAll(i => i.Offset >= val);
+                    case "<": return Index.FindAll(i => i.Offset < val);
+                    case "<=": return Index.FindAll(i => i.Offset <= val);
+                }
+            }
+            else if (fieldName == "length")
+            {
+                int val = (int)criteria;
+
+                switch (op)
+                {
+                    case "==": return Index.FindAll(i => i.Length == val);
+                    case ">": return Index.FindAll(i => i.Length > val);
+                    case ">=": return Index.FindAll(i => i.Length >= val);
+                    case "<": return Index.FindAll(i => i.Length < val);
+                    case "<=": return Index.FindAll(i => i.Length <= val);
+                }
+            }
+            else if (fieldName == "data_id")
+            {
+                int val = (int)criteria;
+
+                switch (op)
+                {
+                    case "==": return Index.FindAll(i => i.DataID == val);
+                    case ">": return Index.FindAll(i => i.DataID > val);
+                    case ">=": return Index.FindAll(i => i.DataID >= val);
+                    case "<": return Index.FindAll(i => i.DataID < val);
+                    case "<=": return Index.FindAll(i => i.DataID <= val);
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
         /// Returns an IndexEntry based on its ordinal position
         /// </summary>
         /// <param name="index">Oridinal position of the desired IndexEntry</param>
@@ -392,24 +447,16 @@ namespace DataCore
         /// Returns an IndexEntry based on it's [UNHASHED] name
         /// </summary>
         /// <param name="name">File name being searched for</param>
-        /// <returns>IndexEntry of name</returns>
-        public IndexEntry GetEntry(string name)
-        {
-            int idx = Index.FindIndex(i => i.Name == name);
-            return (idx != -1) ? Index[idx] : throw new Exception(string.Format("[GetEntry(string name)] Failed to locate entry with name {0}", name));
-        }
+        /// <returns>IndexEntry of name or null</returns>
+        public IndexEntry GetEntry(string name) { return Index.Find(i => i.Name == name); }
 
         /// <summary>
         /// Returns an IndexEntry based on it's dataId and offset
         /// </summary>
         /// <param name="dataId">data.xxx id being searched</param>
         /// <param name="offset">offset of file in dataId being searched</param>
-        /// <returns>IndexEntry of dataId and offset</returns>
-        public IndexEntry GetEntry(int dataId, int offset)
-        {
-            int idx = Index.FindIndex(i => i.DataID == dataId && i.Offset == offset);
-            return (idx != -1) ? Index[idx] : throw new Exception("[GetEntry(int dataId, int offset)] Failed to locate the entry");
-        }
+        /// <returns>IndexEntry of dataId and offset or null</returns>
+        public IndexEntry GetEntry(int dataId, int offset) { return Index.Find(i => i.DataID == dataId && i.Offset == offset); }
 
         /// <summary>
         /// Returns a List of all entries whose name contains partialName
@@ -940,65 +987,17 @@ namespace DataCore
         /// Writes/Appends a file at the filePath in(to) the Rappelz data.xxx storage system
         /// </summary>
         /// <param name="filePath">Location of the file being imported</param>
-        public void ImportFileEntry(string filePath)
-        {
-            // If the file being imported exists
-            if (File.Exists(filePath))
-            {
-                // Define some information about the file
-                string fileName = Path.GetFileName(filePath);
-                string fileExt = StringCipher.IsEncoded(fileName) ? Path.GetExtension(StringCipher.Decode(fileName)).Remove(0, 1) : Path.GetExtension(fileName).Remove(0, 1);
-                long fileLen = new FileInfo(filePath).Length;
-                int dataId = StringCipher.GetID(fileName);
-
-                OnCurrentMaxDetermined(new CurrentMaxArgs(fileLen));
-
-                // Load the file being imported into a byte array
-                byte[] fileBytes = File.ReadAllBytes(filePath);
-
-                // Determine the path of this particular file's data.xxx exists
-                string dataPath = string.Format(@"{0}\data.00{1}", DataDirectory, dataId);
-
-                if (File.Exists(dataPath))
-                {
-                    // Create backup (if applicable)
-                    if (makeBackups) { createBackup(dataPath); }
-
-                    // Open the housing data.xxx file
-                    using (FileStream fs = new FileStream(dataPath, FileMode.Open, FileAccess.Write, FileShare.Read))
-                    {
-                        // Get information on the stored file (if it exists)
-                        IndexEntry entry = GetEntry(fileName);
-
-                        // If the fileBytes need to be encrypted do so
-                        if (XOR.Encrypted(fileExt)) { byte b = 0; XOR.Cipher(ref fileBytes, ref b); }
-
-                        // Set the filestreams position accordingly
-                        fs.Position = (fileLen < entry.Length) ? entry.Offset : fs.Length;
-
-                        // Write the file to the data.xxx file
-                        fs.Write(fileBytes, 0, fileBytes.Length);
-
-                        // Report the progress
-                        if (((fs.Position * 100) / fs.Length) != ((fs.Position - 1) * 100 / fs.Length)) { OnCurrentProgressChanged(new CurrentChangedArgs(fs.Position, string.Empty)); }
-                    }
-                }
-                else { throw new FileNotFoundException(string.Format("[ImportFileEntry] Cannot locate data file: {0}", dataPath)); }
-            }
-            else { throw new FileNotFoundException(string.Format("[ImportFileEntry] Cannot locate file: {0}", filePath)); }
-
-            OnCurrentProgressReset(new CurrentResetArgs(true));
-        }
+        public void ImportFileEntry(string filePath) { try { ImportFileEntry(Path.GetFileName(filePath), File.ReadAllBytes(filePath)); } catch (Exception ex) { throw ex; } }
 
         /// <summary>
         /// Writes/Appends a file represented by fileBytes in(to) the Rappelz data.xxx storage system with given fileName
         /// </summary>
-        /// <param name="fileName">The name of the file being imported (e.g. db_item.rdb)</param>
+        /// <param name="fileName">The name of the file being imported (e.g. db_item.rdb) [UNHASHED]</param>
         /// <param name="fileBytes">Bytes that represent the file</param>
         public void ImportFileEntry(string fileName, byte[] fileBytes)
         {
             // Define some information about the file
-            string fileExt = StringCipher.IsEncoded(fileName) ? Path.GetExtension(StringCipher.Decode(fileName)).Remove(0, 1) : Path.GetExtension(fileName).Remove(0, 1);
+            string fileExt = Path.GetExtension(fileName).Remove(0, 1);
             long fileLen = fileBytes.Length;
             int dataId = StringCipher.GetID(fileName);
 
@@ -1015,14 +1014,19 @@ namespace DataCore
                 // Open the housing data.xxx file
                 using (FileStream fs = new FileStream(dataPath, FileMode.Open, FileAccess.Write, FileShare.Read))
                 {
-                    // Get information on the stored file (if it exists)
-                    IndexEntry entry = GetEntry(fileName);
+                    // Get information on the stored file, otherwise create it.
+                    IndexEntry entry = GetEntry(fileName) ?? new IndexEntry() { Hash = Encoding.ASCII.GetBytes(StringCipher.Encode(fileName)), DataID = dataId };
 
                     // If the fileBytes need to be encrypted do so
                     if (XOR.Encrypted(fileExt)) { byte b = 0; XOR.Cipher(ref fileBytes, ref b); }
 
                     // Set the filestreams position accordingly
                     fs.Position = (fileLen < entry.Length) ? entry.Offset : fs.Length;
+
+                    // Update the entry accordingly
+                    entry.Offset = fs.Position;
+                    if (entry.Length != fileBytes.Length)
+                        entry.Length = fileBytes.Length;
 
                     // Write the file to the data.xxx file
                     fs.Write(fileBytes, 0, fileBytes.Length);
