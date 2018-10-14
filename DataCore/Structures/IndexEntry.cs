@@ -25,6 +25,23 @@ namespace DataCore.Structures
                 Hash = Encoding.ASCII.GetBytes(StringCipher.Encode(value));
             }
         }
+
+        public string Extension
+        {
+            get
+            {
+                if (!string.IsNullOrEmpty(Name))
+                {
+                    string ret = Name.Remove(0, Name.Length - 3);
+                    if (ret[0] == '.')
+                        ret = ret.Remove(0, 1); // Consider 2 character extensions like 'fx'
+
+                    return ret;
+                }                  
+                else
+                    return null;
+            }
+        }
       
         byte[] hash { get; set; }
         /// <summary>
@@ -40,6 +57,21 @@ namespace DataCore.Structures
             }
         }
 
+        string hashName { get; set; }
+
+        public string HashName
+        {
+            get
+            {
+                if (hashName == null)
+                {
+                    hashName = ByteConverterExt.ToString(Hash);
+                }
+
+                return hashName;
+            }
+        }
+
         /// <summary>
         /// The size of the file
         /// </summary>
@@ -50,8 +82,8 @@ namespace DataCore.Structures
         /// </summary>
         public long Offset { get; set; }
 
-        
-        int dataid { get; set; }
+        int dataId { get; set; } = 0;
+
         /// <summary>
         /// Data.XXX file this entry belongs to
         /// </summary>
@@ -59,10 +91,10 @@ namespace DataCore.Structures
         {
             get
             {
-                if (dataid == 0) { dataid = StringCipher.GetID(hash); }
-                return dataid;
+                if (dataId == 0) { dataId = StringCipher.GetID(HashName); }
+                return dataId;
             }
-            set { dataid = value; }
+            set { dataId = value; }
         }
     }
 }

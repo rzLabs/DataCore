@@ -49,6 +49,7 @@
   <ItemGroup>
     <Compile Include="Core.cs" />
     <Compile Include="Enums.cs" />
+    <Compile Include="Functions\ByteConverterExt.cs" />
     <Compile Include="Functions\Extensions.cs" />
     <Compile Include="Functions\Hash.cs" />
     <Compile Include="Functions\IO.cs" />
@@ -58,6 +59,7 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Structures\BlankIndexEntry.cs" />
     <Compile Include="Structures\EventArgs.cs" />
+    <Compile Include="Structures\ExtensionInfo.cs" />
     <Compile Include="Structures\IndexEntry.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

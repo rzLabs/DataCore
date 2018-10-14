@@ -157,7 +157,39 @@ namespace DataCore
         /// <summary>
         /// Returns a list of valid extensions that can be exported
         /// </summary>
-        public List<string> ExtensionList { get { return Extensions.ValidExtensions; } }
+        public List<ExtensionInfo> ExtensionList
+        {
+            get
+            {
+                List<ExtensionInfo> exts = new List<ExtensionInfo>();
+
+                for (int idx = 0; idx < Index.Count; idx++)
+                {
+                    //TODO: ROUGE 9.4 FILE!!!!!
+                    IndexEntry entry = Index[idx];
+                    string ext = Path.GetExtension(entry.Name).Remove(0, 1);
+                    int extIdx = exts.FindIndex(i => i.Type == ext);
+
+                    if (extIdx == -1)
+                        exts.Add(new ExtensionInfo() { Count = 1, Type = ext });
+                    else
+                        exts[extIdx].Count++;
+                }
+
+                return exts.OrderBy(i => i.Type).ToList();
+            }
+            
+        }
+
+        /// <summary>
+        /// Determines if the given extension is Encrypted
+        /// </summary>
+        /// <param name="extension">Extension to be determined</param>
+        /// <returns>True or False</returns>
+        public bool ExtensionEncrypted(string extension)
+        {
+            return XOR.Encrypted(extension);
+        }
 
         #endregion
 
@@ -171,11 +203,9 @@ namespace DataCore
         /// </summary>
         /// <param name="dumpDirectory">Location of dump folders (e.g. client/output/dump/)</param>
         /// <returns>Populated data.000 index</returns>
-        public List<IndexEntry> New(string dumpDirectory)
+        public void New(string dumpDirectory)
         {
             OnMessage(new MessageArgs("Creating new data.000...", false, 0, true, 1));
-
-            List<IndexEntry> newIndex = new List<IndexEntry>();
 
             if (Directory.Exists(dumpDirectory))
             {
@@ -183,7 +213,7 @@ namespace DataCore
 
                 for (int dumpDirIdx = 0; dumpDirIdx < extDirectories.Length; dumpDirIdx++)
                 {
-                    OnMessage(new MessageArgs(string.Format("Indexing files in directory: {0}...", extDirectories[dumpDirIdx]), true, 1));
+                    OnMessage(new MessageArgs(string.Format("Indexing directory: {0}...", extDirectories[dumpDirIdx]), true, 1));
 
                     string[] directoryFiles = Directory.GetFiles(extDirectories[dumpDirIdx]);
 
@@ -195,45 +225,16 @@ namespace DataCore
                         Index.Add(new IndexEntry
                         {
                             Name = Path.GetFileName(directoryFiles[directoryFileIdx]),
-                            Length = (int)new FileInfo(directoryFiles[directoryFileIdx]).Length,
-                            DataID = StringCipher.GetID(Path.GetFileName(directoryFiles[directoryFileIdx])),
-                            Offset = 0
+                            Length = 0,
+                            Offset = 0,
+                            DataID = StringCipher.GetID(Path.GetFileName(directoryFiles[directoryFileIdx]))
                         });
                     }
 
                     OnCurrentProgressReset(new CurrentResetArgs(true));
                 }
-
-                return newIndex;
             }
             else { throw new FileNotFoundException(string.Format("[Create] Cannot locate dump directory at: {0}", dumpDirectory)); }
-        }
-
-        /// <summary>
-        /// Generates a temporary data.000 index consisting of the filePaths array
-        /// for further processing (This function is used for creating an index you wish to use for reference only, 
-        /// not one you would save as a complete data.000)!
-        /// </summary>
-        /// <param name="filePaths">Array of file paths to be indexed</param>
-        /// <returns>Generated index</returns>
-        public List<IndexEntry> New(string[] filePaths)
-        {
-            List<IndexEntry> newIndex = new List<IndexEntry>(filePaths.Length);
-
-            foreach (string filePath in filePaths)
-            {
-                FileInfo fileInfo = new FileInfo(filePath);
-                IndexEntry indexEntry = new IndexEntry
-                {
-                    Name = fileInfo.Name,
-                    Offset = 0,
-                    Length = (int)fileInfo.Length,
-                    DataID = StringCipher.GetID(fileInfo.Name)
-                };
-                Index.Add(indexEntry);
-            }
-
-            return newIndex;
         }
 
         /// <summary>
@@ -273,8 +274,9 @@ namespace DataCore
                         Index.Add(new IndexEntry()
                         {
                             Hash = bytes,
-                            Offset = BitConverter.ToInt32(value,0),
-                            Length = BitConverter.ToInt32(value, 4)
+                            Offset = BitConverter.ToInt32(value, 0),
+                            Length = BitConverter.ToInt32(value, 4),
+                            DataID = StringCipher.GetID(bytes)
                         });
 
                         if ((ms.Position - bytesRead) >= 50000)
@@ -307,7 +309,7 @@ namespace DataCore
 
             OnMessage(new MessageArgs("Writing new data.000..."));
 
-            using (BinaryWriter bw = new BinaryWriter(File.Create(buildPath), Encoding.Default))
+            using (FileStream fs = File.Create(buildPath))
             {
                 byte b = 0;
 
@@ -317,18 +319,43 @@ namespace DataCore
                 {
                     IndexEntry indexEntry = Index[idx];
 
-                    string name = StringCipher.IsEncoded(indexEntry.Name) ? indexEntry.Name : StringCipher.Encode(indexEntry.Name);
-                    byte[] buffer = new byte[] { Convert.ToByte(name.Length) };
+                    //tempInt = hashSize = strlen(p->hash);
+                    //cryptfwrite(&tempInt, 1, 1, data000file);   //WARNING cryptfwrite use the user buffer to decrypt/encrypt data so data became invalid after call to this function
+
+                    //strcpy(temp, p->hash); // Copy the name (hash) into temp
+                    //cryptfwrite(temp, 1, hashSize, data000file);
+
+                    //tempInt = p->beginAddress; // Copy the offset into tempInt
+                    //cryptfwrite(&tempInt, 1, 4, data000file);
+
+                    //tempInt = p->dataSize; // Copy the length into tempInt
+                    //cryptfwrite(&tempInt, 1, 4, data000file);
+
+                    //byte[] buffer = new byte[] { Convert.ToByte(name.Length) };
+                    //XOR.Cipher(ref buffer, ref b);
+                    //fs.Write(buffer, 0, buffer.Length);
+
+                    //byte[] bytes = Encoding.Default.GetBytes(name);
+                    //XOR.Cipher(ref bytes, ref b);
+                    //bw.Write(bytes);
+
+                    //byte[] array = new byte[8];
+                    //Buffer.BlockCopy(BitConverter.GetBytes(indexEntry.Offset), 0, array, 0, 4);
+                    //Buffer.BlockCopy(BitConverter.GetBytes(indexEntry.Length), 0, array, 4, 4);
+                    //XOR.Cipher(ref array, ref b);
+                    //bw.Write(array);
+
+                    byte[] buffer = new byte[] { Convert.ToByte(indexEntry.HashName.Length) };
                     XOR.Cipher(ref buffer, ref b);
-                    bw.Write(buffer);
-                    byte[] bytes = Encoding.Default.GetBytes(name);
-                    XOR.Cipher(ref bytes, ref b);
-                    bw.Write(bytes);
-                    byte[] array = new byte[8];
-                    Buffer.BlockCopy(BitConverter.GetBytes(indexEntry.Offset), 0, array, 0, 4);
-                    Buffer.BlockCopy(BitConverter.GetBytes(indexEntry.Length), 0, array, 4, 4);
-                    XOR.Cipher(ref array, ref b);
-                    bw.Write(array);
+                    fs.Write(buffer, 0, buffer.Length);
+                    buffer = indexEntry.Hash;
+                    XOR.Cipher(ref buffer, ref b);
+                    fs.Write(indexEntry.Hash, 0, indexEntry.Hash.Length);
+                    buffer = new byte[8];
+                    Buffer.BlockCopy(BitConverter.GetBytes(indexEntry.Offset), 0, buffer, 0, 4);
+                    Buffer.BlockCopy(BitConverter.GetBytes(indexEntry.Length), 0, buffer, 4, 4);
+                    XOR.Cipher(ref buffer, ref b);
+                    fs.Write(buffer, 0, buffer.Length);
 
                     int lastIdx = 0;
                     if (lastIdx - idx > 64000) { OnCurrentProgressChanged(new CurrentChangedArgs(idx, "")); lastIdx = idx; }
@@ -374,6 +401,17 @@ namespace DataCore
             long size = 0;
             foreach (IndexEntry entry in filteredList) { size += entry.Length; }
             return size;
+        }
+
+        /// <summary>
+        /// Gets the total size of all files in the Index ending with the given extension
+        /// </summary>
+        /// <param name="extension">Extension of the target files</param>
+        /// <returns>(long) Total Size</returns>
+        public long GetExtensionSize(string extension)
+        {
+            List<IndexEntry> filteredIndex = GetEntriesByExtension(extension);
+            return GetStoredSized(filteredIndex);
         }
 
         /// <summary>
@@ -531,7 +569,10 @@ namespace DataCore
         /// </summary>
         /// <param name="extension">extension being searched (e.g. dds)</param>
         /// <returns>Filtered List of extension</returns>
-        public List<IndexEntry> GetEntriesByExtension(string extension) { return Index.FindAll(i => i.Name.Contains(string.Format(".{0}", extension.ToLower()))); }
+        public List<IndexEntry> GetEntriesByExtension(string extension)
+        {
+            return Index.FindAll(i => i.Name.EndsWith(string.Format(".{0}", extension.ToLower())));
+        }
 
         /// <summary>
         /// Returns a filtered List of all entries matching extension
@@ -541,7 +582,7 @@ namespace DataCore
         /// <returns>Filtered List of extension</returns>
         public List<IndexEntry> GetEntriesByExtension(string extension, SortType type)
         {
-            List<IndexEntry> ret = Index.FindAll(i => i.Name.Contains(string.Format(".{0}", extension.ToLower())));
+            List<IndexEntry> ret = Index.FindAll(i => i.Name.EndsWith(string.Format(".{0}", extension.ToLower())));
 
             switch (type)
             {
@@ -568,7 +609,10 @@ namespace DataCore
         /// <param name="extension">Extension of desired files</param>
         /// <param name="term">Term desired file names must contain</param>
         /// <returns>Filtered List of files with extension whose names contain term</returns>
-        public List<IndexEntry> GetEntriesByExtension(string extension, string term) { return Index.FindAll(i => i.Name.Contains(term) && i.Name.Contains(string.Format(".{0}", extension.ToLower()))); }
+        public List<IndexEntry> GetEntriesByExtension(string extension, string term)
+        {
+            return Index.FindAll(i => i.Name.Contains(term) && i.Name.EndsWith(string.Format(".{0}", extension.ToLower())));
+        }
 
         /// <summary>
         /// Returns a filtered List of all entries matching extension
@@ -579,7 +623,48 @@ namespace DataCore
         /// <returns>Filtered List of extension</returns>
         public List<IndexEntry> GetEntriesByExtension(string extension, string term, SortType type)
         {
-            List<IndexEntry> ret = Index.FindAll(i => i.Name.Contains(term) && i.Name.Contains(string.Format(".{0}", extension.ToLower())));
+            List<IndexEntry> ret = Index.FindAll(i => i.Name.Contains(term) && i.Name.EndsWith(string.Format(".{0}", extension.ToLower())));
+
+            switch (type)
+            {
+                case SortType.Name:
+                    return ret.OrderBy(i => i.Name).ToList();
+
+                case SortType.Offset:
+                    return ret.OrderBy(i => i.Offset).ToList();
+
+                case SortType.Size:
+                    return ret.OrderBy(i => i.Length).ToList();
+
+                case SortType.DataId:
+                    return ret.OrderBy(i => i.DataID).ToList();
+
+                default:
+                    return null;
+            }
+        }
+
+        /// <summary>
+        /// Gets all entries in the Index ending with the given extension with the given dataId
+        /// </summary>
+        /// <param name="extension">Extension of the target files</param>
+        /// <param name="dataID">Data ID of the target files</param>
+        /// <returns>Collection of entries matching the given extension and dataID</returns>
+        public List<IndexEntry> GetEntriesByExtension(string extension, int dataID)
+        {
+            return Index.FindAll(i => i.Name.EndsWith(extension) && i.DataID == dataID);
+        }
+
+        /// <summary>
+        /// Gets all entries in the Index ending with the given extension with the given dataId sorted on the given type
+        /// </summary>
+        /// <param name="extension">Extension of the target files</param>
+        /// <param name="dataID">Data ID of the target files</param>
+        /// <param name="type">Desired SortType for the returned collection</param>
+        /// <returns>Collection of entries matching the given extension and dataID</returns>
+        public List<IndexEntry> GetEntriesByExtension(string extension, int dataID, SortType type)
+        {
+            List<IndexEntry> ret = GetEntriesByExtension(extension, dataID);
 
             switch (type)
             {
@@ -699,227 +784,7 @@ namespace DataCore
         /// <returns>Bytes of the target file</returns>
         public byte[] GetFileBytes(IndexEntry entry)
         {
-            int dataId = entry.DataID;
-
-            byte[] buffer = new byte[entry.Length];
-
-            if (dataId > 0 && dataId < 9)
-            {
-                string dataPath = string.Format(@"{0}\data.00{1}", DataDirectory, dataId);
-
-                if (File.Exists(dataPath))
-                {
-                    string ext = Path.GetExtension(entry.Name).Remove(0, 1).ToLower();
-
-                    // If the file has a valid extension (e.g. .dds)
-                    if (Extensions.IsValid(ext))
-                    {
-                        using (FileStream fs = File.Open(dataPath, FileMode.Open, FileAccess.Read, FileShare.Read))
-                        {
-                            fs.Seek(entry.Offset, SeekOrigin.Begin);
-                            fs.Read(buffer, 0, buffer.Length);
-                        }
-
-                        // Check if this particular extension needs to be unencrypted
-                        if (XOR.Encrypted(ext)) { byte b = 0; XOR.Cipher(ref buffer, ref b); }
-                    }
-                    else { OnWarning(new WarningArgs(string.Format("[GetFileBytes] {0} has an invalid extension!", entry.Name))); }                 
-                }
-                else { throw new FileNotFoundException(string.Format(@"[GetFileBytes] Cannot locate: {0}", dataPath)); }
-            }
-            else { throw new Exception("[GetFileBytes] dataId is invalid! Must be between 1-8"); }
-
-            return buffer;
-        }
-            
-        /// <summary>
-        /// Generates an SHA512 hash for the given fileName by locating the bytes in data.XXX storage
-        /// </summary>
-        /// <param name="fileName">Name of the file to generate hash for</param>
-        /// <returns>SHA512 Hash String</returns>
-        public string GetFileSHA512(string fileName)
-        {
-            int dataId = StringCipher.GetID(fileName);
-
-            if (dataId > 0)
-            {
-                string dataPath = string.Format(@"{0}\data.00{1}", DataDirectory, dataId);
-
-                if (File.Exists(dataPath))
-                {
-                    byte[] buffer = null;
-                    IndexEntry fileEntry = GetEntry(fileName);
-
-                    if (fileEntry != null)
-                    {
-                        using (FileStream dataFS = new FileStream(dataPath, FileMode.Open, FileAccess.Read))
-                        {
-                            dataFS.Position = fileEntry.Offset;
-                            buffer = new byte[fileEntry.Length];
-                            dataFS.Read(buffer, 0, buffer.Length);
-
-                            if (buffer.Length > 0)
-                            {
-                                string ext = StringCipher.IsEncoded(fileName) ? Path.GetExtension(StringCipher.Decode(fileName)).Remove(0, 1).ToLower() : Path.GetExtension(fileName).Remove(0, 1);
-                                if (XOR.Encrypted(ext)) { byte b = 0; XOR.Cipher(ref buffer, ref b); }
-
-                                string hash = Hash.GetSHA512Hash(buffer, buffer.Length);
-                                
-                                if (!string.IsNullOrEmpty(hash))
-                                {
-                                    buffer = null;
-                                    return hash;
-                                }
-                                else { throw new Exception(string.Format(@"[GetFileSHA512] Failed to generate hash for: {0}", fileName)); }
-                            }
-                            else { throw new Exception("[GetFileSHA512] Failed to read file into buffer!"); }
-                        }
-                    }
-                    else { throw new Exception(string.Format(@"[GetFileSHA512] Failed to locate entry for: {0}", fileName)); }
-                }
-                else { throw new FileNotFoundException(string.Format(@"[GetFileSHA512] Cannot locate: {0}", dataPath)); }
-            }
-            else { throw new Exception(string.Format(@"[GetFileSHA512] dataId is 0!\nPerhaps file: {0} doesn't exist!", fileName)); }
-        }
-
-        /// <summary>
-        /// Generates an SHA512 hash for the file at given offset and length
-        /// </summary>
-        /// <param name="dataId">Data.xxx id (e.g. 1-8)</param>
-        /// <param name="offset">Start of the file in dataId</param>
-        /// <param name="length">Length of the file in dataId</param>
-        /// <param name="fileExt">Extension of the file</param>
-        /// <returns>SHA512 Hash String</returns>
-        public string GetFileSHA512(int dataId, long offset, int length, string fileExt)
-        {
-            if (dataId > 0 && dataId < 9)
-            {
-                string dataPath = string.Format(@"{0}\data.00{1}", DataDirectory, dataId);
-
-                if (File.Exists(dataPath))
-                {
-                    byte[] buffer = null;
-
-                    using (FileStream dataFS = new FileStream(dataPath, FileMode.Open, FileAccess.Read))
-                    {
-                        dataFS.Position = offset;
-                        buffer = new byte[length];
-                        dataFS.Read(buffer, 0, buffer.Length);
-
-                        if (buffer.Length > 0)
-                        {
-                            if (XOR.Encrypted(fileExt)) { byte b = 0; XOR.Cipher(ref buffer, ref b); }
-
-                            string hash = Hash.GetSHA512Hash(buffer, buffer.Length);
-
-                            if (!string.IsNullOrEmpty(hash))
-                            {
-                                buffer = null;
-                                return hash;
-                            }
-                            else { throw new Exception(string.Format(@"Failed to generate hash for file @ offset: {0} with length: {1}", offset, length)); }
-                        }
-                        else { throw new Exception("[GetFileSHA512] Failed to read file into buffer!"); }
-                    }
-                }
-                else { throw new FileNotFoundException(string.Format(@"[GetFileSHA512] Cannot locate: {0}", dataPath)); }
-            }
-            else { throw new Exception("[GetFileSHA512] dataId is 0!\nPerhaps file doesn't exist!"); }
-        }
-
-        /// <summary>
-        /// Generates an MD5 hash for the given fileName by locating the bytes in data.XXX storage
-        /// </summary>
-        /// <param name="fileName">Name of the file to generate hash for</param>
-        /// <returns>MD5 Hash String</returns>
-        public string GetFileMD5(string fileName)
-        {
-            int dataId = StringCipher.GetID(fileName);
-
-            if (dataId > 0)
-            {
-                string dataPath = string.Format(@"{0}\data.00{1}", DataDirectory, dataId);
-
-                if (File.Exists(dataPath))
-                {
-                    byte[] buffer = null;
-                    IndexEntry fileEntry = GetEntry(fileName);
-
-                    if (fileEntry != null)
-                    {
-                        using (FileStream dataFS = new FileStream(dataPath, FileMode.Open, FileAccess.Read))
-                        {
-                            dataFS.Position = fileEntry.Offset;
-                            buffer = new byte[fileEntry.Length];
-                            dataFS.Read(buffer, 0, buffer.Length);
-
-                            if (buffer.Length > 0)
-                            {
-                                string ext = Path.GetExtension(fileName).Remove(0, 1).ToLower();
-                                if (XOR.Encrypted(ext)) { byte b = 0; XOR.Cipher(ref buffer, ref b); }
-
-                                string hash = Hash.GetMD5Hash(buffer, buffer.Length);
-
-                                if (!string.IsNullOrEmpty(hash))
-                                {
-                                    buffer = null;
-                                    return hash;
-                                }
-                                else { throw new Exception(string.Format(@"Failed to generate hash for: {0}", fileName)); }
-                            }
-                            else { throw new Exception("[GetFileMD5] Failed to read file into buffer!"); }
-                        }
-                    }
-                    else { throw new Exception(string.Format(@"[GetFileMD5] Failed to locate entry for: {0}", fileName)); }
-                }
-                else { throw new FileNotFoundException(string.Format(@"[GetFileMD5] Cannot locate: {0}", dataPath)); }
-            }
-            else { throw new Exception(string.Format(@"[GetFileMD5] dataId is 0!\nPerhaps file: {0} doesn't exist!", fileName)); }
-        }
-
-        /// <summary>
-        /// Generates an MD5 hash for the file at given offset and length
-        /// </summary>
-        /// <param name="dataId">Data.xxx id (e.g. 1-8)</param>
-        /// <param name="offset">Start of the file in dataId</param>
-        /// <param name="length">Length of the file in dataId</param>
-        /// <param name="fileExt">Extension of the file</param>
-        /// <returns>SHA512 Hash String</returns>
-        public string GetFileMD5(int dataId, long offset, int length, string fileExt)
-        {
-            if (dataId > 0)
-            {
-                string dataPath = string.Format(@"{0}\data.00{1}", DataDirectory, dataId);
-
-                if (File.Exists(dataPath))
-                {
-                    byte[] buffer = null;
-
-                    using (FileStream dataFS = new FileStream(dataPath, FileMode.Open, FileAccess.Read))
-                    {
-                        dataFS.Position = offset;
-                        buffer = new byte[length];
-                        dataFS.Read(buffer, 0, buffer.Length);
-
-                        if (buffer.Length > 0)
-                        {
-                            if (XOR.Encrypted(fileExt)) { byte b = 0; XOR.Cipher(ref buffer, ref b); }
-
-                            string hash = Hash.GetMD5Hash(buffer, buffer.Length);
-
-                            if (!string.IsNullOrEmpty(hash))
-                            {
-                                buffer = null;
-                                return hash;
-                            }
-                            else { throw new Exception(string.Format(@"Failed to generate hash for file @ offset: {0} with length: {1}", offset, length)); }
-                        }
-                        else { throw new Exception("[GetFileMD5] Failed to read file into buffer!"); }
-                    }
-                }
-                else { throw new FileNotFoundException(string.Format(@"[GetFileMD5] Cannot locate: {0}", dataPath)); }
-            }
-            else { throw new Exception("[GetFileMD5] dataId is 0!\nPerhaps file doesn't exist!"); }
+            return GetFileBytes(entry.Name, entry.DataID, entry.Offset, entry.Length);
         }
 
         /// <summary>
@@ -932,55 +797,155 @@ namespace DataCore
         /// <param name="buildPath">Path to create the exported file at</param>
         /// <param name="offset">Offset of the file being exported from dataXXX_path</param>
         /// <param name="length">Length of the file being exported from dataXXX_path</param>
-        public void ExportFileEntry(string buildPath, long offset, int length)
+        public void ExportFileEntry(string buildPath, IndexEntry entry)
         {
-            string dataPath = string.Format(@"{0}\data.00{1}", DataDirectory, StringCipher.GetID(Path.GetFileName(buildPath)));
+            string dataPath = string.Format(@"{0}\data.00{1}", DataDirectory, entry.DataID);
 
             if (File.Exists(dataPath))
             {
-                string fileExt = null;
                 byte[] outBuffer = null;
 
                 // Open the housing data.xxx and read the file contents into outBuffer
                 using (FileStream dataFS = new FileStream(dataPath, FileMode.Open, FileAccess.Read))
                 {
-                    dataFS.Position = offset;
-                    outBuffer = new byte[length];
-                    dataFS.Read(outBuffer, 0, length);
+                    dataFS.Position = entry.Offset;
+                    outBuffer = new byte[entry.Length];
+                    dataFS.Read(outBuffer, 0, outBuffer.Length);
                 }
 
                 // IF the buffer actually contains data
                 if (outBuffer.Length > 0)
                 {
-                    string fileName = Path.GetFileName(buildPath);
-                    if (StringCipher.IsEncoded(fileName)) { fileName = StringCipher.Decode(fileName); }
+                    // Check if this particular extension needs to be unencrypted
+                    if (XOR.Encrypted(entry.Extension)) { byte b = 0; XOR.Cipher(ref outBuffer, ref b); }
 
-                    OnCurrentMaxDetermined(new CurrentMaxArgs(length));
-
-                    // Determine the files extension
-                     fileExt = Path.GetExtension(fileName).Remove(0,1).ToLower();
-
-                    // If the file has a valid extension (e.g. .dds)
-                    if (Extensions.IsValid(fileExt))
+                    using (FileStream buildFs = new FileStream(buildPath, FileMode.Create, FileAccess.Write, FileShare.Read))
                     {
-                        // Check if this particular extension needs to be unencrypted
-                        if (XOR.Encrypted(fileExt)) { byte b = 0; XOR.Cipher(ref outBuffer, ref b); }
+                        buildFs.Write(outBuffer, 0, outBuffer.Length);
+                    }
 
-                        using (FileStream buildFs = new FileStream(buildPath, FileMode.Create, FileAccess.Write, FileShare.Read))
-                        {
-                            buildFs.Write(outBuffer, 0, outBuffer.Length);
-                            if (((buildFs.Position * 100) / buildFs.Length) != ((buildFs.Position - 1) * 100 / buildFs.Length)) { OnCurrentProgressChanged(new CurrentChangedArgs(buildFs.Position, string.Empty)); }
-                        }
-
-                        OnCurrentProgressReset(new CurrentResetArgs(true));
-                    } 
-                    else { OnWarning(new WarningArgs(string.Format("[ExportFileEntry] Skipping entry {0} with malformed extension {1}", Path.GetFileName(buildPath), fileExt))); }
                 }
                 else { throw new Exception("[ExportFileEntry] Failed to buffer file for export"); }
 
                 outBuffer = null;
             }
             else { throw new FileNotFoundException(string.Format("[ExportFileEntry] Cannot locate: {0}", dataPath)); }
+        }
+
+        /// <summary>
+        /// Exports all files whose name ends with the given extension to the build directory
+        /// </summary>
+        /// <param name="buildDirectory">Directory to which exported files will be written</param>
+        /// <param name="ext">Extension of the target files</param>
+        public void ExportExtEntries(string buildDirectory, string ext)
+        {
+            int count = GetEntriesByExtension(ext).Count;
+            int exported = 0;
+
+            OnCurrentMaxDetermined(new CurrentMaxArgs(count));
+
+            for (int dataId = 1; dataId < 8; dataId++)
+            {
+                string dataPath = string.Format(@"{0}\data.00{1}", DataDirectory, dataId);
+                List<IndexEntry> entriesByExtID = GetEntriesByExtension(ext, dataId, SortType.Offset);
+
+                if (entriesByExtID.Count == 0)
+                    throw new Exception(string.Format("No results for extension: {0}", ext));
+
+                if (!File.Exists(dataPath))
+                    throw new Exception(string.Format("Data unit not found at path: {0}", dataPath));
+
+                using (FileStream ds = File.Open(dataPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                {
+                    for (int entryIdx = 0; entryIdx < entriesByExtID.Count; entryIdx++)
+                    {
+                        IndexEntry entry = entriesByExtID[entryIdx];
+                        string buildPath = string.Format(@"{0}\{1}", buildDirectory, entry.Name);
+
+                        byte[] buffer = new byte[entry.Length];
+
+                        ds.Seek(entry.Offset, SeekOrigin.Begin);
+                        ds.Read(buffer, 0, buffer.Length);
+
+                        if (XOR.Encrypted(ext))
+                        {
+                            byte b = 0;
+                            XOR.Cipher(ref buffer, ref b);
+                        }
+
+                        using (FileStream fs = File.Create(buildPath))
+                            fs.Write(buffer, 0, buffer.Length);
+
+                        if (((exported * 100) / RowCount) != ((exported - 1) * 100 / RowCount))
+                        {
+                            OnCurrentProgressChanged(new CurrentChangedArgs(exported, null));
+                        }
+
+                        exported++;
+                    }
+                }
+            }
+
+            OnCurrentProgressReset(new CurrentResetArgs(true));
+        }
+
+        /// <summary>
+        /// Exports all entries indexed by the data.000 into the build directory
+        /// </summary>
+        /// <param name="buildDirectory">Directory in which exported files will be written</param>
+        public void ExportAllEntries(string buildDirectory)
+        {
+            OnCurrentMaxDetermined(new CurrentMaxArgs(Index.Count));
+
+            int exported = 0;
+
+            for (int dataId = 1; dataId <= 8; dataId++)
+            {
+                string dataPath = string.Format(@"{0}\data.00{1}", DataDirectory, dataId);
+                List<IndexEntry> entriesById = GetEntriesByDataId(dataId, SortType.Offset);
+
+                if (entriesById.Count == 0)
+                    throw new Exception(string.Format("No results for data id: {0}", dataId));
+
+                if (!File.Exists(dataPath))
+                    throw new Exception(string.Format("Data unit not found at path: {0}", dataPath));
+
+                using (FileStream ds = File.Open(dataPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                {
+                    for (int entryIdx = 0; entryIdx < entriesById.Count; entryIdx++)
+                    {
+                        IndexEntry entry = entriesById[entryIdx];
+                        string extDirectory = string.Format(@"{0}\{1}", buildDirectory, entry.Extension);
+                        string buildPath = string.Format(@"{0}\{1}", extDirectory, entry.Name);
+
+                        if (!Directory.Exists(extDirectory))
+                            Directory.CreateDirectory(extDirectory);
+
+                        byte[] buffer = new byte[entry.Length];
+
+                        ds.Seek(entry.Offset, SeekOrigin.Begin);
+                        ds.Read(buffer, 0, buffer.Length);
+
+                        if (XOR.Encrypted(entry.Extension))
+                        {
+                            byte b = 0;
+                            XOR.Cipher(ref buffer, ref b);
+                        }
+
+                        using (FileStream fs = File.Create(buildPath))
+                            fs.Write(buffer, 0, buffer.Length);
+
+                        if (((exported * 100) / RowCount) != ((exported - 1) * 100 / RowCount))
+                        {
+                            OnCurrentProgressChanged(new CurrentChangedArgs(exported, null));
+                        }
+                        
+                        exported++;
+                    }
+                }
+            }
+
+            OnCurrentProgressReset(new CurrentResetArgs(true));
         }
 
         /// <summary>
@@ -1015,7 +980,7 @@ namespace DataCore
                 using (FileStream fs = new FileStream(dataPath, FileMode.Open, FileAccess.Write, FileShare.Read))
                 {
                     // Get information on the stored file, otherwise create it.
-                    IndexEntry entry = GetEntry(fileName) ?? new IndexEntry() { Hash = Encoding.ASCII.GetBytes(StringCipher.Encode(fileName)), DataID = dataId };
+                    IndexEntry entry = GetEntry(fileName) ?? new IndexEntry() { Hash = Encoding.ASCII.GetBytes(StringCipher.Encode(fileName)) };
 
                     // If the fileBytes need to be encrypted do so
                     if (XOR.Encrypted(fileExt)) { byte b = 0; XOR.Cipher(ref fileBytes, ref b); }
@@ -1071,75 +1036,70 @@ namespace DataCore
         /// <param name="dumpDirectory">Location of dump folders (e.g. client/output/dump/)</param>
         /// <param name="buildDirectory">Location of build folder (e.g. client/output/data-files/)</param>
         /// <returns>Newly generated List to be saved</returns>
-        /// TODO: Make assurance files don't already exist?
-        public List<IndexEntry> BuildDataFiles(string dumpDirectory, string buildDirectory)
+        public void BuildDataFiles(string dumpDirectory, string buildDirectory)
         {
-            List<IndexEntry> index = null;
+            int written = 0;
 
             if (Directory.Exists(dumpDirectory))
             {
-                // Build new data.000
-                string[] extDirectories = Directory.GetDirectories(dumpDirectory);
+                New(dumpDirectory);
 
-                // Create a new index of the dumpDirectory
-                index = New(dumpDirectory);
+                OnCurrentMaxDetermined(new CurrentMaxArgs(RowCount));
 
-                // Issue a reset to the CurrentProgressbar
-                OnCurrentProgressReset(new CurrentResetArgs(true));
-
-                // Foreach data.xxx file (1-8)
                 for (int dataId = 1; dataId <= 8; dataId++)
                 {
-                    OnMessage(new MessageArgs(string.Format("Building data.00{0}...", dataId)));
+                    OnMessage(new MessageArgs(string.Format("Building new data.00{0}", dataId)));
 
-                    // Filter down the new data.000 into the current dataId only
-                    List<IndexEntry> filteredIndex = GetEntriesByDataId(index, dataId, SortType.Size);
-
-                    OnCurrentMaxDetermined(new CurrentMaxArgs(filteredIndex.Count));
+                    List<IndexEntry> entriesByID = GetEntriesByDataId(dataId);
 
                     string buildPath = string.Format(@"{0}\data.00{1}", buildDirectory, dataId);
 
-                    // Check if the data.xxx exists if so delete it
                     if (File.Exists(buildPath)) { File.Delete(buildPath); }
 
-                    // Create a new filestream to write current data.xxx with
                     using (FileStream fs = new FileStream(buildPath, FileMode.Create, FileAccess.Write))
                     {
-                        // Using a binarywriter write to the filestream
-                        using (BinaryWriter bw = new BinaryWriter(fs))
+                        for (int curFileIdx = 0; curFileIdx < entriesByID.Count; curFileIdx++)
                         {
-                            // For each IndexEntry in the filteredIndex
-                            for (int curFileIdx = 0; curFileIdx < filteredIndex.Count; curFileIdx++)
+                            IndexEntry entry = entriesByID[curFileIdx];
+                            string filePath = string.Format(@"{0}\{1}\{2}", dumpDirectory, entry.Extension, entry.Name);
+                            byte[] buffer = null;
+
+                            if (File.Exists(filePath))
                             {
-                                IndexEntry fileEntry = filteredIndex[curFileIdx];
+                                buffer = File.ReadAllBytes(filePath);
 
-                                fileEntry.Offset = fs.Position;
-
-                                OnCurrentProgressChanged(new CurrentChangedArgs(curFileIdx, string.Empty));
-
-                                // Determine the path to the file on the physical disk
-                                string filePath = string.Format(@"{0}/{1}/{2}", dumpDirectory, Path.GetExtension(fileEntry.Name).ToUpper().Remove(0, 1), fileEntry.Name);
-
-                                // If the file physically exists
-                                if (File.Exists(filePath))
+                                if (XOR.Encrypted(entry.Extension))
                                 {
-                                    byte[] fileBytes = File.ReadAllBytes(filePath);
-                                    if (XOR.Encrypted(Path.GetExtension(fileEntry.Name).Remove(0, 1))) { byte b = 0; XOR.Cipher(ref fileBytes, ref b); }
-                                    ((IndexEntry)index.Find(i => i.Name == fileEntry.Name)).Offset = fs.Position;
-                                    bw.Write(fileBytes);
+                                    byte b = 0;
+                                    XOR.Cipher(ref buffer, ref b);
                                 }
-                                else { throw new FileNotFoundException(string.Format("[BuildDataFiles] Cannot locate: {0}", filePath)); }
+
+                                entry.Offset = fs.Position;
+                                entry.Length = buffer.Length;
+
+                                fs.Write(buffer, 0, buffer.Length);
+
+                                if ((written * 100 / RowCount) != ((written - 1) * 100 / RowCount))
+                                {
+                                    OnCurrentProgressChanged(new CurrentChangedArgs(written, null));
+                                }
+
+                                written++;
                             }
+                            else
+                                throw new Exception(string.Format("Could not find file: {0}", filePath));
                         }
                     }
-
-                    OnCurrentProgressReset(new CurrentResetArgs(true));
                 }
             }
-            else { throw new FileNotFoundException(string.Format("[BuildDataFiles] Cannot locate dump directory at: {0}", dumpDirectory)); }
+            else
+            {
+                throw new FileNotFoundException(string.Format("[BuildDataFiles] Cannot locate dump directory at: {0}", dumpDirectory));
+            }
 
             GC.Collect();
-            return index;
+            OnCurrentProgressReset(new CurrentResetArgs(false));
+            Save(buildDirectory);
         }
 
         /// <summary>
@@ -1208,10 +1168,22 @@ namespace DataCore
             XOR.UnencryptedExtensions = luaIO.GetUnencryptedExtensions();
         }
 
-        void createBackup(string dataPath)
+        /// <summary>
+        /// Clears the loaded index
+        /// </summary>
+        public void Clear()
         {
-            string bakPath = string.Format(@"{0}_NEW", dataPath);
-            string altBakPath = string.Format(@"{0}_OLD_{1}", dataPath, DateTime.Now.ToLongDateString());
+            Index.Clear();
+        }
+
+        /// <summary>
+        /// Creates a backup of the target at filepath if it exists
+        /// </summary>
+        /// <param name="filepath">Target file to be backed up</param>
+        void createBackup(string filepath)
+        {
+            string bakPath = string.Format(@"{0}_NEW", filepath);
+            string altBakPath = string.Format(@"{0}_OLD_{1}", filepath, DateTime.Now.ToLongDateString());
 
             if (File.Exists(bakPath))
             {
@@ -1219,30 +1191,37 @@ namespace DataCore
                 OnMessage(new MessageArgs("Previous BAK was detected and renamed.", true, 1, true, 1));
             }
 
-            OnMessage(new MessageArgs("Creating backup...", true));
-
-            using (FileStream inFS = new FileStream(dataPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            if (File.Exists(filepath))
             {
-                int length = (int)inFS.Length;
+                OnMessage(new MessageArgs("Creating backup...", true));
 
-                OnCurrentMaxDetermined(new CurrentMaxArgs(inFS.Length));
-
-                using (FileStream outFS = File.Create(string.Format(@"{0}_BAK", dataPath)))
+                using (FileStream inFS = new FileStream(filepath, FileMode.Open, FileAccess.Read, FileShare.Read))
                 {
-                    int chunkSize = Convert.ToInt32(new FileInfo(dataPath).Length * 0.02);
+                    int length = (int)inFS.Length;
 
-                    for (int byteCount = 0; byteCount < length; byteCount += Math.Min(length - byteCount, chunkSize))
+                    OnCurrentMaxDetermined(new CurrentMaxArgs(inFS.Length));
+
+                    using (FileStream outFS = File.Create(string.Format(@"{0}_BAK", filepath)))
                     {
-                        long nextChunk = Math.Min(length - byteCount, chunkSize);
-                        byte[] inChunks = new byte[nextChunk];
-                        inFS.Read(inChunks, 0, inChunks.Length);
-                        outFS.Write(inChunks, 0, inChunks.Length);
-                        OnCurrentProgressChanged(new CurrentChangedArgs(byteCount, ""));
+                        int chunkSize = Convert.ToInt32(new FileInfo(filepath).Length * 0.02);
+
+                        for (int byteCount = 0; byteCount < length; byteCount += Math.Min(length - byteCount, chunkSize))
+                        {
+                            long nextChunk = Math.Min(length - byteCount, chunkSize);
+                            byte[] inChunks = new byte[nextChunk];
+                            inFS.Read(inChunks, 0, inChunks.Length);
+                            outFS.Write(inChunks, 0, inChunks.Length);
+                            OnCurrentProgressChanged(new CurrentChangedArgs(byteCount, ""));
+                        }
                     }
                 }
-            }
 
-            OnCurrentProgressReset(new CurrentResetArgs(true));
+                OnCurrentProgressReset(new CurrentResetArgs(true));
+            }
+            else
+            {
+                // TODO: Throw Exception
+            }
         }
 
         #endregion
