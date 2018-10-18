@@ -3,7 +3,7 @@ using System.Text;
 
 namespace DataCore.Functions
 {
-    class StringCipher
+    public class StringCipher
     {
         static byte[] decryptLastCharTable = new byte[] {
          0x54, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -169,9 +169,8 @@ namespace DataCore.Functions
         }
 
         #endregion
-      
-        public static int GetID(string value) { return GetID(IsEncoded(value) ? value : Encode(value)); }
 
+        public static int GetID(string hash) { return GetID(Encoding.ASCII.GetBytes(IsEncoded(hash) ? hash : Encode(hash))); }
         public static int GetID(byte[] hash)
         {
             int checksum = 0;
@@ -187,7 +186,6 @@ namespace DataCore.Functions
         static int toLower(byte b)
         {
             if (b >= 'A' && b <= 'Z') { return b - ('A' - 'a'); }
-            
             return b;
         }
     }
