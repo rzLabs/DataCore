@@ -241,7 +241,6 @@ namespace DataCore
         /// <param name="path">Path to the data.000 index</param>
         public void Load(string path)
         {
-<<<<<<< HEAD
             string indexPath = null;
 
             if (File.GetAttributes(path).HasFlag(FileAttributes.Directory))
@@ -250,28 +249,14 @@ namespace DataCore
                 indexPath = path;
 
             byte b = 0;
-=======
-            string loadPath = string.Format(@"{0}\data.000", path);
->>>>>>> c33ddd6dcefd990a8c4e1f7c2488fcc4a682feed
 
-            byte b = 0;
             long bytesRead = 0;
 
-<<<<<<< HEAD
             if (File.Exists(indexPath))
             {
                 DataDirectory = Path.GetDirectoryName(indexPath);
 
                 using (var ms = new MemoryStream(File.ReadAllBytes(indexPath)))
-=======
-            Index.Clear();
-
-            if (File.Exists(loadPath))
-            {
-                DataDirectory = Path.GetDirectoryName(loadPath);
-
-                using (var ms = new MemoryStream(File.ReadAllBytes(loadPath)))
->>>>>>> c33ddd6dcefd990a8c4e1f7c2488fcc4a682feed
                 {
                     OnCurrentMaxDetermined(new CurrentMaxArgs(ms.Length));
 
@@ -314,17 +299,11 @@ namespace DataCore
         /// <summary>
         /// Saves the provided indexList into a ready to use data.000 index
         /// </summary>
-<<<<<<< HEAD
         /// <param name="buildDirectory">Location to build the new data.000 at</param>
         /// <returns>bool value indicating success or failure</returns>
         public void Save(string buildDirectory)
-=======
-        /// <returns>bool value indicating success or failure</returns>
-        /// TODO: UPDATE PATH!
-        public void Save()
->>>>>>> c33ddd6dcefd990a8c4e1f7c2488fcc4a682feed
         {
-            string buildPath = string.Format(@"{0}\data.000", DataDirectory);
+            string buildPath = string.Format(@"{0}\data.000", buildDirectory);
 
             if (makeBackups) { createBackup(buildPath); }
 
@@ -481,17 +460,6 @@ namespace DataCore
         /// <param name="name">File name being searched for</param>
         /// <returns>IndexEntry of name or null</returns>
         public IndexEntry GetEntry(string name) { return Index.Find(i => i.Name == name); }
-
-        /// <summary>
-        /// Returns an boolean result based on it's [UNHASHED] name
-        /// </summary>
-        /// <param name="name">File name being searched for</param>
-        /// <returns>boolean of result</returns>
-        public bool GetEntryExist(string name)
-        {
-            int idx = Index.FindIndex(i => i.Name == name);
-            return (idx != -1);
-        }
 
         /// <summary>
         /// Returns an IndexEntry based on it's dataId and offset
@@ -715,15 +683,12 @@ namespace DataCore
         /// Removes a single entry bearing Name = name from referenced data.000 index
         /// </summary>
         /// <param name="fileName">Name of the IndexEntry being deleted</param>
-        public void DeleteEntryByName(string fileName)
+        /// <param name="dataDirectory">Directory of the data.xxx files</param>
+        public void DeleteEntryByName(string fileName, string dataDirectory)
         {
             IndexEntry entry = GetEntry(fileName);
-            if (entry != null)
-            {
-                DeleteFileEntry(entry.DataID, entry.Offset, entry.Length);
-                Index.Remove(entry);
-            }
-            else { throw new Exception(string.Format("[DeleteEntryByName] IndexEntry for {0} not found!", fileName)); }
+            DeleteFileEntry(entry.DataID, entry.Offset, entry.Length);
+            Index.Remove(entry);
         }
 
         /// <summary>
@@ -756,11 +721,7 @@ namespace DataCore
         public byte[] GetFileBytes(string fileName)
         {
             var fileEntry = GetEntry(fileName);
-            if (fileEntry != null)
-            {
-                return GetFileBytes(Path.GetExtension(fileName), fileEntry.DataID, fileEntry.Offset, fileEntry.Length);
-            }
-            else { throw new Exception(string.Format("[GetFileBytes] IndexEntry for {0} not found!", fileName)); }
+            return GetFileBytes(Path.GetExtension(fileName), fileEntry.DataID, fileEntry.Offset, fileEntry.Length);
         }
 
         /// <summary>
@@ -820,8 +781,10 @@ namespace DataCore
         /// defined it would default to 2% of total file size (unless n/a then it will
         /// default to 64k)
         /// </summary>
+        /// <param name="dataDirectory">Location of the data.xxx files</param>
         /// <param name="buildPath">Path to create the exported file at</param>
-        /// <param name="entry">(IndexEntry) containing information about the target file</param>
+        /// <param name="offset">Offset of the file being exported from dataXXX_path</param>
+        /// <param name="length">Length of the file being exported from dataXXX_path</param>
         public void ExportFileEntry(string buildPath, IndexEntry entry)
         {
             string dataPath = string.Format(@"{0}\data.00{1}", DataDirectory, entry.DataID);
@@ -987,10 +950,9 @@ namespace DataCore
         public void ImportFileEntry(string fileName, byte[] fileBytes)
         {
             // Define some information about the file
-            string fileExt = Path.GetExtension(fileName).Remove(0, 1).ToLower();
+            string fileExt = Path.GetExtension(fileName).Remove(0, 1);
             long fileLen = fileBytes.Length;
             int dataId = StringCipher.GetID(fileName);
-            bool newFile = GetEntryExist(fileName);
 
             OnCurrentMaxDetermined(new CurrentMaxArgs(fileLen));
 
@@ -1021,8 +983,6 @@ namespace DataCore
 
                     // Write the file to the data.xxx file
                     fs.Write(fileBytes, 0, fileBytes.Length);
-
-                    if (newFile) Index.Add(entry);
 
                     // Report the progress
                     if (((fs.Position * 100) / fs.Length) != ((fs.Position - 1) * 100 / fs.Length)) { OnCurrentProgressChanged(new CurrentChangedArgs(fs.Position, string.Empty)); }
@@ -1127,7 +1087,7 @@ namespace DataCore
 
             GC.Collect();
             OnCurrentProgressReset(new CurrentResetArgs(false));
-            Save();
+            Save(buildDirectory);
         }
 
         /// <summary>
