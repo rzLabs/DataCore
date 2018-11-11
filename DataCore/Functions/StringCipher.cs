@@ -3,10 +3,14 @@ using System.Text;
 
 namespace DataCore.Functions
 {
+<<<<<<< HEAD
     /// <summary>
     /// Provides Encryption, Decryption and Information regarding the Rappelz data.xxx naming/encryption systems.
     /// </summary>
     public static class StringCipher
+=======
+    public class StringCipher
+>>>>>>> c33ddd6dcefd990a8c4e1f7c2488fcc4a682feed
     {
         static byte[] decryptLastCharTable = new byte[] {
          0x54, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -172,6 +176,7 @@ namespace DataCore.Functions
         }
 
         #endregion
+<<<<<<< HEAD
       
         public static int GetID(string value)
         {
@@ -180,7 +185,10 @@ namespace DataCore.Functions
 
             return GetID(hash);
         }
+=======
+>>>>>>> c33ddd6dcefd990a8c4e1f7c2488fcc4a682feed
 
+        public static int GetID(string hash) { return GetID(Encoding.ASCII.GetBytes(IsEncoded(hash) ? hash : Encode(hash))); }
         public static int GetID(byte[] hash)
         {
             int checksum = 0;
@@ -196,7 +204,6 @@ namespace DataCore.Functions
         static int toLower(byte b)
         {
             if (b >= 'A' && b <= 'Z') { return b - ('A' - 'a'); }
-            
             return b;
         }
     }
