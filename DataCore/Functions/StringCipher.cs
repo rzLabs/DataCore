@@ -3,7 +3,10 @@ using System.Text;
 
 namespace DataCore.Functions
 {
-    class StringCipher
+    /// <summary>
+    /// Provides Encryption, Decryption and Information regarding the Rappelz data.xxx naming/encryption systems.
+    /// </summary>
+    public static class StringCipher
     {
         static byte[] decryptLastCharTable = new byte[] {
          0x54, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -170,7 +173,13 @@ namespace DataCore.Functions
 
         #endregion
       
-        public static int GetID(string value) { return GetID(IsEncoded(value) ? value : Encode(value)); }
+        public static int GetID(string value)
+        {
+            string plainHash = IsEncoded(value) ? value : Encode(value);
+            byte[] hash = Encoding.Default.GetBytes(plainHash);
+
+            return GetID(hash);
+        }
 
         public static int GetID(byte[] hash)
         {

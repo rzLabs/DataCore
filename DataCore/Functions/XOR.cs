@@ -542,7 +542,7 @@ namespace DataCore.Functions
         {
             for (int i = 0; i < buffer.Length; i++)
             {
-                buffer[i] ^= s_CipherTable[(int)index];
+                buffer[i] ^= s_CipherTable[index];
                 index++;
             }
         }

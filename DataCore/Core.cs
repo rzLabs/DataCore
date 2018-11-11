@@ -16,8 +16,6 @@ using DataCore.Structures;
 /// </summary>
 namespace DataCore
 {
-    // TODO: Add 'RemoveDuplicates' (ascii/non-ascii) <reduce client size?>
-    // TODO: Add 'CompareFiles' function (to compare external file with data file)
     /// <summary>
     /// Provides interactive access to the Rappelz Data.XXX File Management System
     /// </summary>
@@ -165,9 +163,9 @@ namespace DataCore
 
                 for (int idx = 0; idx < Index.Count; idx++)
                 {
-                    //TODO: ROUGE 9.4 FILE!!!!!
                     IndexEntry entry = Index[idx];
-                    string ext = Path.GetExtension(entry.Name).Remove(0, 1);
+                    string ext = entry.Extension;
+
                     int extIdx = exts.FindIndex(i => i.Type == ext);
 
                     if (extIdx == -1)
@@ -242,16 +240,23 @@ namespace DataCore
         /// </summary>
         /// <param name="path">Path to the data.000 index</param>
         public void Load(string path)
-        {         
+        {
+            string indexPath = null;
+
+            if (File.GetAttributes(path).HasFlag(FileAttributes.Directory))
+                indexPath = string.Format(@"{0}\data.000", path);
+            else
+                indexPath = path;
+
             byte b = 0;
 
             long bytesRead = 0;
 
-            if (File.Exists(path))
+            if (File.Exists(indexPath))
             {
-                DataDirectory = Path.GetDirectoryName(path);
+                DataDirectory = Path.GetDirectoryName(indexPath);
 
-                using (var ms = new MemoryStream(File.ReadAllBytes(path)))
+                using (var ms = new MemoryStream(File.ReadAllBytes(indexPath)))
                 {
                     OnCurrentMaxDetermined(new CurrentMaxArgs(ms.Length));
 
@@ -275,11 +280,10 @@ namespace DataCore
                         {
                             Hash = bytes,
                             Offset = BitConverter.ToInt32(value, 0),
-                            Length = BitConverter.ToInt32(value, 4),
-                            DataID = StringCipher.GetID(bytes)
+                            Length = BitConverter.ToInt32(value, 4)
                         });
 
-                        if ((ms.Position - bytesRead) >= 50000)
+                        if ((ms.Position - bytesRead) >= 64000)
                         {
                             OnCurrentProgressChanged(new CurrentChangedArgs(ms.Position, ""));
                             bytesRead = ms.Position;
@@ -287,7 +291,7 @@ namespace DataCore
                     }
                 }
             }
-            else { throw new FileNotFoundException(string.Format("[Load] Cannot find data.000 at path: {0}", path)); }
+            else { throw new FileNotFoundException(string.Format("[Load] Cannot find data.000 at path: {0}", indexPath)); }
 
             OnCurrentProgressReset(new CurrentResetArgs(true));
         }
@@ -296,9 +300,7 @@ namespace DataCore
         /// Saves the provided indexList into a ready to use data.000 index
         /// </summary>
         /// <param name="buildDirectory">Location to build the new data.000 at</param>
-        /// <param name="isBlankIndex">Determines if the index is a Blank Space Index</param>
         /// <returns>bool value indicating success or failure</returns>
-        /// TODO: UPDATE PATH!
         public void Save(string buildDirectory)
         {
             string buildPath = string.Format(@"{0}\data.000", buildDirectory);
@@ -318,42 +320,13 @@ namespace DataCore
                 for (int idx = 0; idx < Index.Count; idx++)
                 {
                     IndexEntry indexEntry = Index[idx];
+                    int hashLen = indexEntry.Hash.Length;
 
-                    //tempInt = hashSize = strlen(p->hash);
-                    //cryptfwrite(&tempInt, 1, 1, data000file);   //WARNING cryptfwrite use the user buffer to decrypt/encrypt data so data became invalid after call to this function
-
-                    //strcpy(temp, p->hash); // Copy the name (hash) into temp
-                    //cryptfwrite(temp, 1, hashSize, data000file);
-
-                    //tempInt = p->beginAddress; // Copy the offset into tempInt
-                    //cryptfwrite(&tempInt, 1, 4, data000file);
-
-                    //tempInt = p->dataSize; // Copy the length into tempInt
-                    //cryptfwrite(&tempInt, 1, 4, data000file);
-
-                    //byte[] buffer = new byte[] { Convert.ToByte(name.Length) };
-                    //XOR.Cipher(ref buffer, ref b);
-                    //fs.Write(buffer, 0, buffer.Length);
-
-                    //byte[] bytes = Encoding.Default.GetBytes(name);
-                    //XOR.Cipher(ref bytes, ref b);
-                    //bw.Write(bytes);
-
-                    //byte[] array = new byte[8];
-                    //Buffer.BlockCopy(BitConverter.GetBytes(indexEntry.Offset), 0, array, 0, 4);
-                    //Buffer.BlockCopy(BitConverter.GetBytes(indexEntry.Length), 0, array, 4, 4);
-                    //XOR.Cipher(ref array, ref b);
-                    //bw.Write(array);
-
-                    byte[] buffer = new byte[] { Convert.ToByte(indexEntry.HashName.Length) };
-                    XOR.Cipher(ref buffer, ref b);
-                    fs.Write(buffer, 0, buffer.Length);
-                    buffer = indexEntry.Hash;
-                    XOR.Cipher(ref buffer, ref b);
-                    fs.Write(indexEntry.Hash, 0, indexEntry.Hash.Length);
-                    buffer = new byte[8];
-                    Buffer.BlockCopy(BitConverter.GetBytes(indexEntry.Offset), 0, buffer, 0, 4);
-                    Buffer.BlockCopy(BitConverter.GetBytes(indexEntry.Length), 0, buffer, 4, 4);
+                    byte[] buffer = new byte[hashLen + 9];
+                    buffer[0] = Convert.ToByte(indexEntry.HashName.Length);
+                    Buffer.BlockCopy(indexEntry.Hash, 0, buffer, 1, hashLen);
+                    Buffer.BlockCopy(BitConverter.GetBytes(indexEntry.Offset), 0, buffer, hashLen + 1, 4);
+                    Buffer.BlockCopy(BitConverter.GetBytes(indexEntry.Length), 0, buffer, hashLen + 5, 4);
                     XOR.Cipher(ref buffer, ref b);
                     fs.Write(buffer, 0, buffer.Length);
 
@@ -683,6 +656,21 @@ namespace DataCore
                 default:
                     return null;
             }
+        }
+
+        /// <summary>
+        /// Returns a filtered List of all entries with matching provided extensions
+        /// </summary>
+        /// <param name="extensions"></param>
+        /// <returns></returns>
+        public List<IndexEntry> GetEntriesByExtensions(params string[] extensions)
+        {
+            List<IndexEntry> ret = new List<IndexEntry>();
+
+            foreach (string ext in extensions)
+                ret.AddRange(Index.FindAll(i => i.Name.EndsWith(string.Format(".{0}", ext.ToLower()))));           
+
+            return ret.OrderBy(i => i.Name).ToList();
         }
 
         /// <summary>
