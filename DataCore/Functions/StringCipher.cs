@@ -193,6 +193,14 @@ namespace DataCore.Functions
             return (checksum & 0x07) + 1;
         }
 
+        public static string GetPath(string hashStr)
+        {
+            string val = hashStr.ToLower();
+            int checksum = 0;
+            foreach (char c in val) { checksum += c; }
+            return (checksum / 100).ToString("D3");
+        }
+
         static int toLower(byte b)
         {
             if (b >= 'A' && b <= 'Z') { return b - ('A' - 'a'); }

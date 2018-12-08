@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using DataCore.Structures;
 
 namespace DataCore.Functions
 {

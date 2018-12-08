@@ -10,7 +10,7 @@ namespace DataCore.Structures
     {       
         string name { get; set; }
         /// <summary>
-        /// The hashed file name
+        /// The unhashed file name
         /// </summary>
         public string Name
         {
@@ -95,6 +95,11 @@ namespace DataCore.Structures
                 return dataId;
             }
             set { dataId = value; }
+        }
+
+        public string DataPath
+        {
+            get { return StringCipher.GetPath(HashName); }
         }
     }
 }

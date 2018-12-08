@@ -114,6 +114,12 @@ namespace DataCore
         public Core() { } 
 
         /// <summary>
+        /// Instantiates the Core by providing encoding for operations
+        /// </summary>
+        /// <param name="encoding"></param>
+        public Core(Encoding encoding) { this.encoding = encoding; }
+
+        /// <summary>
         /// Instantiates the Core by providing backup and encoding for operations
         /// </summary>
         /// <param name="backup">Determines if this core will use the backup function</param>
@@ -781,13 +787,12 @@ namespace DataCore
         /// defined it would default to 2% of total file size (unless n/a then it will
         /// default to 64k)
         /// </summary>
-        /// <param name="dataDirectory">Location of the data.xxx files</param>
-        /// <param name="buildPath">Path to create the exported file at</param>
-        /// <param name="offset">Offset of the file being exported from dataXXX_path</param>
-        /// <param name="length">Length of the file being exported from dataXXX_path</param>
-        public void ExportFileEntry(string buildPath, IndexEntry entry)
+        /// <param name="buildDir">Directory to create the exported file at</param>
+        /// <param name="entry">Entry information for file being exported</param>
+        public void ExportFileEntry(string buildDir, IndexEntry entry)
         {
-            string dataPath = string.Format(@"{0}\data.00{1}", DataDirectory, entry.DataID);
+            string buildPath = string.Format(@"{0}\{1}", buildDir, entry.Name);
+            string dataPath = string.Format(@"{0}\data.00{1}", DataDirectory, entry.DataID);          
 
             if (File.Exists(dataPath))
             {
@@ -836,9 +841,6 @@ namespace DataCore
             {
                 string dataPath = string.Format(@"{0}\data.00{1}", DataDirectory, dataId);
                 List<IndexEntry> entriesByExtID = GetEntriesByExtension(ext, dataId, SortType.Offset);
-
-                if (entriesByExtID.Count == 0)
-                    throw new Exception(string.Format("No results for extension: {0}", ext));
 
                 if (!File.Exists(dataPath))
                     throw new Exception(string.Format("Data unit not found at path: {0}", dataPath));
@@ -1001,8 +1003,6 @@ namespace DataCore
         /// <param name="length">How far to write zeros</param>
         public void DeleteFileEntry(int dataId, long offset, long length)
         {
-            // TODO: Add proper error catching here
-
             // Determine the path of this particular file's data.xxx exists
             string dataPath = string.Format(@"{0}\data.00{1}", DataDirectory, dataId);
 
@@ -1208,7 +1208,7 @@ namespace DataCore
             }
             else
             {
-                // TODO: Throw Exception
+                throw new FileNotFoundException("Cannot backup file, original file not found!", string.Format("Original File Location: {0}", filepath));
             }
         }
 
