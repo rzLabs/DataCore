@@ -44,6 +44,12 @@ namespace DataCore
         /// </summary>
         public string DataDirectory { get; set; }
 
+        public bool Backups
+        {
+            get { return makeBackups; }
+            set { makeBackups = value; }
+        }
+
         LUA luaIO;
 
         #region Events
@@ -111,7 +117,7 @@ namespace DataCore
         /// <summary>
         /// Dummy constructor
         /// </summary>
-        public Core() { } 
+        public Core() { }
 
         /// <summary>
         /// Instantiates the Core by providing encoding for operations
@@ -182,7 +188,7 @@ namespace DataCore
 
                 return exts.OrderBy(i => i.Type).ToList();
             }
-            
+
         }
 
         /// <summary>
@@ -230,8 +236,7 @@ namespace DataCore
                         {
                             Name = Path.GetFileName(directoryFiles[directoryFileIdx]),
                             Length = 0,
-                            Offset = 0,
-                            DataID = StringCipher.GetID(Path.GetFileName(directoryFiles[directoryFileIdx]))
+                            Offset = 0
                         });
                     }
 
@@ -375,11 +380,133 @@ namespace DataCore
         /// </summary>
         /// <param name="filteredList">List of files to be summed</param>
         /// <returns>(long) File Size of filteredList</returns>
-        public long GetStoredSized(List<IndexEntry> filteredList)
+        public long GetStoredSize(List<IndexEntry> filteredList)
         {
             long size = 0;
             foreach (IndexEntry entry in filteredList) { size += entry.Length; }
             return size;
+        }
+
+        /// <summary>
+        /// Gets the total size of all the files listed for the given dataId
+        /// </summary>
+        /// <param name="dataId">ID of data unit to be calculated</param>
+        /// <returns>(long) File Size of all files in dataId</returns>
+        public long GetStoredSize(int dataId)
+        {
+            long size = 0;
+
+            switch (dataId)
+            {
+                case 0:
+                    foreach (IndexEntry entry in Index) { size += entry.Length; }
+                    break;
+
+                case 1:
+                    foreach (IndexEntry entry in GetEntriesByDataId(1)) { size += entry.Length; }
+                    break;
+
+                case 2:
+                    foreach (IndexEntry entry in GetEntriesByDataId(2)) { size += entry.Length; }
+                    break;
+
+                case 3:
+                    foreach (IndexEntry entry in GetEntriesByDataId(3)) { size += entry.Length; }
+                    break;
+
+                case 4:
+                    foreach (IndexEntry entry in GetEntriesByDataId(4)) { size += entry.Length; }
+                    break;
+
+                case 5:
+                    foreach (IndexEntry entry in GetEntriesByDataId(5)) { size += entry.Length; }
+                    break;
+
+                case 6:
+                    foreach (IndexEntry entry in GetEntriesByDataId(6)) { size += entry.Length; }
+                    break;
+
+                case 7:
+                    foreach (IndexEntry entry in GetEntriesByDataId(7)) { size += entry.Length; }
+                    break;
+
+                case 8:
+                    foreach (IndexEntry entry in GetEntriesByDataId(8)) { size += entry.Length; }
+                    break;
+            }
+
+            return size;
+        }
+
+        public long GetPhysicalSize(int dataId)
+        {
+            string path = null;
+
+            if (dataId == 0)
+            {
+                long val = 0;
+
+                for (int i = 1; i <= 8; i++)
+                {
+                    path = string.Format(@"{0}\data.00{1}", DataDirectory, i);
+                    val += new FileInfo(path).Length;
+                }
+
+                return val;
+            }
+            else
+            {
+                path = string.Format(@"{0}\data.00{1}", DataDirectory, dataId);
+                return new FileInfo(path).Length;
+            }
+
+        }
+
+        /// <summary>
+        /// Gets the total size of fragmented space in the entire client
+        /// </summary>
+        /// <returns>(long) Total fragmented bytes in all data.00*</returns>
+        public long GetFragmentedSize()
+        {
+            long val = 0;
+
+            for (int i = 1; i < 8; i++)
+                val += GetFragmentedSize(i);
+
+            return val;
+        }
+
+        /// <summary>
+        /// Gets the total size of fragmented space in the storage unit
+        /// </summary>
+        /// <param name="dataId">ID of the data unit to be calculated</param>
+        /// <returns>(long) Total fragmented bytes in dataId</returns>
+        public long GetFragmentedSize(int dataId)
+        {
+            long physicalSize = 0;
+            long indexedSize = 0;
+            long fragmentedSize = 0;
+
+            string dataPath = string.Format(@"{0}\data.00{1}", DataDirectory, dataId);
+            if (File.Exists(dataPath))
+            {
+                physicalSize = new FileInfo(dataPath).Length;
+            }
+            else
+                throw new FileNotFoundException(string.Format("Data Storage Unit #{0} not found at path: {1}", dataId, dataPath));
+
+            indexedSize = GetStoredSize(dataId);
+            fragmentedSize = physicalSize - indexedSize;
+
+            return fragmentedSize;
+        }
+
+        public int GetFileCount(int dataId)
+        {
+            if (dataId == 0)
+                return Index.Count;
+            else
+                return GetEntriesByDataId(dataId).Count;
         }
 
         /// <summary>
@@ -389,8 +516,7 @@ namespace DataCore
         /// <returns>(long) Total Size</returns>
         public long GetExtensionSize(string extension)
         {
-            List<IndexEntry> filteredIndex = GetEntriesByExtension(extension);
-            return GetStoredSized(filteredIndex);
+            return GetStoredSize(GetEntriesByExtension(extension));
         }
 
         /// <summary>
@@ -750,19 +876,14 @@ namespace DataCore
                 {
                     string ext = Path.GetExtension(fileName).Remove(0, 1).ToLower();
 
-                    // If the file has a valid extension (e.g. .dds)
-                    if (Extensions.IsValid(ext))
+                    using (FileStream fs = File.Open(dataPath, FileMode.Open, FileAccess.Read, FileShare.Read))
                     {
-                        using (FileStream fs = File.Open(dataPath, FileMode.Open, FileAccess.Read, FileShare.Read))
-                        {
-                            fs.Seek(offset, SeekOrigin.Begin);
-                            fs.Read(buffer, 0, buffer.Length);
-                        }
-
-                        // Check if this particular extension needs to be unencrypted
-                        if (XOR.Encrypted(ext)) { byte b = 0; XOR.Cipher(ref buffer, ref b); }
+                        fs.Seek(offset, SeekOrigin.Begin);
+                        fs.Read(buffer, 0, buffer.Length);
                     }
-                    else { OnWarning(new WarningArgs(string.Format("[GetFileBytes] {0} has an invalid extension!", fileName))); }         
+
+                    // Check if this particular extension needs to be unencrypted
+                    if (XOR.Encrypted(ext)) { byte b = 0; XOR.Cipher(ref buffer, ref b); }
                 }
                 else { throw new FileNotFoundException(string.Format(@"[GetFileBytes] Cannot locate: {0}", dataPath)); }
             }
@@ -942,7 +1063,10 @@ namespace DataCore
         /// Writes/Appends a file at the filePath in(to) the Rappelz data.xxx storage system
         /// </summary>
         /// <param name="filePath">Location of the file being imported</param>
-        public void ImportFileEntry(string filePath) { try { ImportFileEntry(Path.GetFileName(filePath), File.ReadAllBytes(filePath)); } catch (Exception ex) { throw ex; } }
+        public void ImportFileEntry(string filePath)
+        {
+            ImportFileEntry(Path.GetFileName(filePath), File.ReadAllBytes(filePath));
+        }
 
         /// <summary>
         /// Writes/Appends a file represented by fileBytes in(to) the Rappelz data.xxx storage system with given fileName
@@ -970,7 +1094,12 @@ namespace DataCore
                 using (FileStream fs = new FileStream(dataPath, FileMode.Open, FileAccess.Write, FileShare.Read))
                 {
                     // Get information on the stored file, otherwise create it.
-                    IndexEntry entry = GetEntry(fileName) ?? new IndexEntry() { Hash = Encoding.ASCII.GetBytes(StringCipher.Encode(fileName)) };
+                    IndexEntry entry = GetEntry(fileName);
+                    if (entry == null)
+                    {
+                        entry = new IndexEntry() { Hash = Encoding.ASCII.GetBytes(StringCipher.Encode(fileName)) };
+                        Index.Add(entry);
+                    }
 
                     // If the fileBytes need to be encrypted do so
                     if (XOR.Encrypted(fileExt)) { byte b = 0; XOR.Cipher(ref fileBytes, ref b); }

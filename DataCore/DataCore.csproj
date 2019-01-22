@@ -35,7 +35,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="MoonSharp.Interpreter">
-      <HintPath>..\..\rMOD\MoonSharp.Interpreter.dll</HintPath>
+      <HintPath>..\..\3rd Party\MoonSharp.Interpreter.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />

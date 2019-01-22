@@ -16,7 +16,9 @@ namespace DataCore.Structures
         {
             get
             {
-                if (string.IsNullOrEmpty(name)) { name = StringCipher.Decode(hash); }
+                if (string.IsNullOrEmpty(name))
+                    name = StringCipher.Decode(hash);
+                    
                 return name;
             }
             set
