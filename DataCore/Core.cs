@@ -307,6 +307,8 @@ namespace DataCore
             OnCurrentProgressReset(new CurrentResetArgs(true));
         }
 
+        public void Save() { Save(DataDirectory); }
+
         /// <summary>
         /// Saves the provided indexList into a ready to use data.000 index
         /// </summary>
@@ -819,7 +821,6 @@ namespace DataCore
         public void DeleteEntryByName(string fileName, string dataDirectory)
         {
             IndexEntry entry = GetEntry(fileName);
-            DeleteFileEntry(entry.DataID, entry.Offset, entry.Length);
             Index.Remove(entry);
         }
 
@@ -842,9 +843,26 @@ namespace DataCore
             else { throw new Exception(string.Format("[UpdateEntryOffset] IndexEntry for {0} not found!", fileName)); }
         }
 
+
+        /// <summary>
+        /// Gets the IndexEntry with given fileName regardless of locale
+        /// </summary>
+        /// <param name="fileName">Name o the IndexEntry being saught</param>
+        /// <returns>Matching IndexEntry of fileName</returns>
+        public IndexEntry GetEntryNoLocale(string fileName)
+        {
+            var fileEntry = GetEntry(fileName);
+
+            if (fileEntry == null)
+                fileEntry = GetEntry(fileName.Replace(".", "(ascii)."));
+
+            return fileEntry;
+        }
+
         #endregion
 
         #region File Methods
+
 
         /// <summary>
         /// Gets the collection of bytes that makes up a given file
@@ -852,8 +870,9 @@ namespace DataCore
         /// <param name="fileName">Name of the file to generate hash for</param>
         public byte[] GetFileBytes(string fileName)
         {
-            var fileEntry = GetEntry(fileName);
-            return GetFileBytes(Path.GetExtension(fileName), fileEntry.DataID, fileEntry.Offset, fileEntry.Length);
+            var fileEntry = GetEntry(fileName.ToLower());
+
+            return GetFileBytes(fileEntry);
         }
 
         /// <summary>
@@ -957,11 +976,14 @@ namespace DataCore
             int exported = 0;
 
             OnCurrentMaxDetermined(new CurrentMaxArgs(count));
+            OnMessage(new MessageArgs("{0} entries found for extension: {1}", count, ext));
 
-            for (int dataId = 1; dataId < 8; dataId++)
+            for (int dataId = 1; dataId <= 8; dataId++)
             {
                 string dataPath = string.Format(@"{0}\data.00{1}", DataDirectory, dataId);
                 List<IndexEntry> entriesByExtID = GetEntriesByExtension(ext, dataId, SortType.Offset);
+
+                OnMessage(new MessageArgs("Exporting {0} files from data.00{1}", entriesByExtID.Count, dataId));
 
                 if (!File.Exists(dataPath))
                     throw new Exception(string.Format("Data unit not found at path: {0}", dataPath));
@@ -972,6 +994,8 @@ namespace DataCore
                     {
                         IndexEntry entry = entriesByExtID[entryIdx];
                         string buildPath = string.Format(@"{0}\{1}", buildDirectory, entry.Name);
+
+                        OnMessage(new MessageArgs("Exporting: {0}", entry.Name));
 
                         byte[] buffer = new byte[entry.Length];
 
@@ -1080,8 +1104,6 @@ namespace DataCore
             long fileLen = fileBytes.Length;
             int dataId = StringCipher.GetID(fileName);
 
-            OnCurrentMaxDetermined(new CurrentMaxArgs(fileLen));
-
             // Determine the path of this particular file's data.xxx exists
             string dataPath = string.Format(@"{0}\data.00{1}", DataDirectory, dataId);
 
@@ -1089,6 +1111,8 @@ namespace DataCore
             {
                 // Create backup (if applicable)
                 if (makeBackups) { createBackup(dataPath); }
+
+                OnCurrentMaxDetermined(new CurrentMaxArgs(fileLen));
 
                 // Open the housing data.xxx file
                 using (FileStream fs = new FileStream(dataPath, FileMode.Open, FileAccess.Write, FileShare.Read))
@@ -1112,11 +1136,15 @@ namespace DataCore
                     if (entry.Length != fileBytes.Length)
                         entry.Length = fileBytes.Length;
 
-                    // Write the file to the data.xxx file
-                    fs.Write(fileBytes, 0, fileBytes.Length);
+                    int chunkSize = Convert.ToInt32(fileLen * 0.02);
 
-                    // Report the progress
-                    if (((fs.Position * 100) / fs.Length) != ((fs.Position - 1) * 100 / fs.Length)) { OnCurrentProgressChanged(new CurrentChangedArgs(fs.Position, string.Empty)); }
+                    for (int byteCount = 0; byteCount < fileLen; byteCount += Math.Min((int)fileLen - byteCount, chunkSize))
+                    {
+                        long nextChunk = Math.Min(fileLen - byteCount, chunkSize);
+                        byte[] inChunks = new byte[nextChunk];
+                        Buffer.BlockCopy(fileBytes, byteCount, inChunks, 0, inChunks.Length);
+                        fs.Write(inChunks, 0, inChunks.Length);
+                    }
                 }
             }
             else { throw new FileNotFoundException(string.Format("[ImportFileEntry(string fileName, byte[] fileBytes)] Cannot locate data file: {0}", dataPath)); }
@@ -1126,24 +1154,43 @@ namespace DataCore
 
         /// <summary>
         /// Overwrites a previous files bytes with zeros in effect erasing it
-        /// </summary>
         /// <param name="dataId">Id of the data.xxx file to be altered</param>
         /// <param name="offset">Offset to begin writing zeros</param>
         /// <param name="length">How far to write zeros</param>
-        public void DeleteFileEntry(int dataId, long offset, long length)
+        public void DeleteFileEntry(int dataId, int offset, int length)
         {
             // Determine the path of this particular file's data.xxx exists
             string dataPath = string.Format(@"{0}\data.00{1}", DataDirectory, dataId);
 
+            if (!File.Exists(dataPath))
+                throw new FileNotFoundException(string.Format("data.00{0} unit not found at: {1}", dataId, dataPath));
+
+            OnMessage(new MessageArgs("Attempting to delete file content from data.00{0}", dataId));
+
             if (makeBackups) { createBackup(dataPath); }
 
-            using (FileStream dataFs = File.Open(dataPath, FileMode.Open, FileAccess.ReadWrite))
+            byte[] inBytes = File.ReadAllBytes(dataPath);
+            byte[] outBytes = new byte[inBytes.Length - length];
+
+            Buffer.BlockCopy(inBytes, 0, outBytes, 0, offset);
+
+            int so2 = offset + length;
+            int remainder = inBytes.Length - (offset + length);
+
+            Buffer.BlockCopy(inBytes, so2, outBytes, offset, remainder);
+
+            try
             {
-                dataFs.Position = offset;
-                using (BinaryWriter bw = new BinaryWriter(dataFs))
-                {
-                    bw.Write(new byte[length]);
-                }
+                using (FileStream fs = new FileStream(dataPath, FileMode.Append, FileAccess.ReadWrite, FileShare.None))
+                    fs.Write(outBytes, 0, outBytes.Length);
+            }
+            catch (Exception ex) { throw ex; }
+            finally
+            {
+                DeleteEntryByIdandOffset(dataId, offset);
+                OnMessage(new MessageArgs("The file at offset: {0} in data.00{1} deleted", offset, dataId));
+
+                Save();
             }
         }
 
@@ -1171,7 +1218,8 @@ namespace DataCore
 
                     string buildPath = string.Format(@"{0}\data.00{1}", buildDirectory, dataId);
 
-                    if (File.Exists(buildPath)) { File.Delete(buildPath); }
+                    if (File.Exists(buildPath))
+                        File.Delete(buildPath);
 
                     using (FileStream fs = new FileStream(buildPath, FileMode.Create, FileAccess.Write))
                     {
@@ -1197,9 +1245,7 @@ namespace DataCore
                                 fs.Write(buffer, 0, buffer.Length);
 
                                 if ((written * 100 / RowCount) != ((written - 1) * 100 / RowCount))
-                                {
                                     OnCurrentProgressChanged(new CurrentChangedArgs(written, null));
-                                }
 
                                 written++;
                             }
@@ -1210,9 +1256,7 @@ namespace DataCore
                 }
             }
             else
-            {
                 throw new FileNotFoundException(string.Format("[BuildDataFiles] Cannot locate dump directory at: {0}", dumpDirectory));
-            }
 
             GC.Collect();
             OnCurrentProgressReset(new CurrentResetArgs(false));
@@ -1300,7 +1344,9 @@ namespace DataCore
         void createBackup(string filepath)
         {
             string bakPath = string.Format(@"{0}_NEW", filepath);
-            string altBakPath = string.Format(@"{0}_OLD_{1}", filepath, DateTime.Now.ToLongDateString());
+            string altBakPath = string.Format(@"{0}_OLD_{1}{2}{3}", filepath, DateTime.Now.Year,
+                                                                              DateTime.Now.Month.ToString("D2"),
+                                                                              DateTime.Now.Day.ToString("D2"));
 
             if (File.Exists(bakPath))
             {
@@ -1310,7 +1356,7 @@ namespace DataCore
 
             if (File.Exists(filepath))
             {
-                OnMessage(new MessageArgs("Creating backup...", true));
+                OnMessage(new MessageArgs("Creating backup of file: {0}", Path.GetFileName(filepath)));
 
                 using (FileStream inFS = new FileStream(filepath, FileMode.Open, FileAccess.Read, FileShare.Read))
                 {
@@ -1336,9 +1382,7 @@ namespace DataCore
                 OnCurrentProgressReset(new CurrentResetArgs(true));
             }
             else
-            {
                 throw new FileNotFoundException("Cannot backup file, original file not found!", string.Format("Original File Location: {0}", filepath));
-            }
         }
 
         #endregion

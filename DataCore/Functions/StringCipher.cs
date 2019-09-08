@@ -57,6 +57,12 @@ namespace DataCore.Functions
 
         public static bool IsEncoded(string hash) { return Encode(Decode(hash)) == hash; }
 
+        public static bool IsEncoded(byte[] hash)
+        {
+            string nameHash = ByteConverterExt.ToString(hash);
+            return Encode(Decode(hash)) == nameHash;
+        }
+
         #endregion
 
         #region Decrypt
@@ -171,6 +177,11 @@ namespace DataCore.Functions
             return Encoding.ASCII.GetString(hash);
         }
 
+        public static string Encode(byte[] hash)
+        {
+            return Encode(ByteConverterExt.ToString(hash));
+        }
+
         #endregion
       
         public static int GetID(string value)
@@ -195,9 +206,10 @@ namespace DataCore.Functions
 
         public static string GetPath(string hashStr)
         {
-            string val = hashStr.ToLower();
             int checksum = 0;
-            foreach (char c in val) { checksum += c; }
+            foreach (char c in hashStr.ToLower())
+                checksum += c;
+
             return (checksum / 100).ToString("D3");
         }
 

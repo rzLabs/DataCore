@@ -29,6 +29,7 @@ namespace DataCore
         public int BreakCount { get; set; }
 
         public MessageArgs(string message) { Message = message; Tab = false; TabCount = 0; }
+        public MessageArgs(string message, params object[] args) { Message = string.Format(message, args); }
         public MessageArgs(string message, bool tab) { Message = message; Tab = true; TabCount = 1; }
         public MessageArgs(string message, bool tab, int tabCount) { Message = message; Tab = true; TabCount = tabCount; }
         public MessageArgs(string message, bool tab, int tabCount, bool @break) { Message = message; Tab = true; TabCount = tabCount;  Break = @break;  BreakCount = 1; }
