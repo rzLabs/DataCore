@@ -93,7 +93,9 @@ namespace DataCore.Structures
         {
             get
             {
-                if (dataId == 0) { dataId = StringCipher.GetID(HashName); }
+                if (dataId == 0)
+                    dataId = StringCipher.GetID(HashName);
+
                 return dataId;
             }
             set { dataId = value; }

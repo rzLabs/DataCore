@@ -132,7 +132,7 @@ namespace DataCore
         /// <param name="encoding">Encoding to be applied to certain conversions</param>
         public Core(bool backup, Encoding encoding)
         {
-            makeBackups = true;
+            makeBackups = backup;
             this.encoding = encoding;
         }
 
@@ -759,7 +759,7 @@ namespace DataCore
         /// <returns>Collection of entries matching the given extension and dataID</returns>
         public List<IndexEntry> GetEntriesByExtension(string extension, int dataID)
         {
-            return Index.FindAll(i => i.Name.EndsWith(extension) && i.DataID == dataID);
+            return Index.FindAll(i => i.Extension == extension && i.DataID == dataID);
         }
 
         /// <summary>
@@ -983,40 +983,43 @@ namespace DataCore
                 string dataPath = string.Format(@"{0}\data.00{1}", DataDirectory, dataId);
                 List<IndexEntry> entriesByExtID = GetEntriesByExtension(ext, dataId, SortType.Offset);
 
-                OnMessage(new MessageArgs("Exporting {0} files from data.00{1}", entriesByExtID.Count, dataId));
-
-                if (!File.Exists(dataPath))
-                    throw new Exception(string.Format("Data unit not found at path: {0}", dataPath));
-
-                using (FileStream ds = File.Open(dataPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                if (entriesByExtID.Count > 0)
                 {
-                    for (int entryIdx = 0; entryIdx < entriesByExtID.Count; entryIdx++)
+                    OnMessage(new MessageArgs("Exporting {0} files from data.00{1}", entriesByExtID.Count, dataId));
+
+                    if (!File.Exists(dataPath))
+                        throw new Exception(string.Format("Data unit not found at path: {0}", dataPath));
+
+                    using (FileStream ds = File.Open(dataPath, FileMode.Open, FileAccess.Read, FileShare.Read))
                     {
-                        IndexEntry entry = entriesByExtID[entryIdx];
-                        string buildPath = string.Format(@"{0}\{1}", buildDirectory, entry.Name);
-
-                        OnMessage(new MessageArgs("Exporting: {0}", entry.Name));
-
-                        byte[] buffer = new byte[entry.Length];
-
-                        ds.Seek(entry.Offset, SeekOrigin.Begin);
-                        ds.Read(buffer, 0, buffer.Length);
-
-                        if (XOR.Encrypted(ext))
+                        for (int entryIdx = 0; entryIdx < entriesByExtID.Count; entryIdx++)
                         {
-                            byte b = 0;
-                            XOR.Cipher(ref buffer, ref b);
+                            IndexEntry entry = entriesByExtID[entryIdx];
+                            string buildPath = string.Format(@"{0}\{1}", buildDirectory, entry.Name);
+
+                            OnMessage(new MessageArgs("Exporting: {0}", entry.Name));
+
+                            byte[] buffer = new byte[entry.Length];
+
+                            ds.Seek(entry.Offset, SeekOrigin.Begin);
+                            ds.Read(buffer, 0, buffer.Length);
+
+                            if (XOR.Encrypted(ext))
+                            {
+                                byte b = 0;
+                                XOR.Cipher(ref buffer, ref b);
+                            }
+
+                            using (FileStream fs = File.Create(buildPath))
+                                fs.Write(buffer, 0, buffer.Length);
+
+                            if (((exported * 100) / RowCount) != ((exported - 1) * 100 / RowCount))
+                            {
+                                OnCurrentProgressChanged(new CurrentChangedArgs(exported, null));
+                            }
+
+                            exported++;
                         }
-
-                        using (FileStream fs = File.Create(buildPath))
-                            fs.Write(buffer, 0, buffer.Length);
-
-                        if (((exported * 100) / RowCount) != ((exported - 1) * 100 / RowCount))
-                        {
-                            OnCurrentProgressChanged(new CurrentChangedArgs(exported, null));
-                        }
-
-                        exported++;
                     }
                 }
             }
