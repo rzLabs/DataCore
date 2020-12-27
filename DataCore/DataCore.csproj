@@ -34,8 +34,8 @@
     <DocumentationFile>bin\Release\DataCore.XML</DocumentationFile>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="MoonSharp.Interpreter">
-      <HintPath>..\..\3rd Party\MoonSharp.Interpreter.dll</HintPath>
+    <Reference Include="MoonSharp.Interpreter, Version=2.0.0.0, Culture=neutral, PublicKeyToken=921e73ce94aa17f8, processorArchitecture=MSIL">
+      <HintPath>..\..\Grimoire\packages\MoonSharp.2.0.0.0\lib\net40-client\MoonSharp.Interpreter.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -61,6 +61,9 @@
     <Compile Include="Structures\EventArgs.cs" />
     <Compile Include="Structures\ExtensionInfo.cs" />
     <Compile Include="Structures\IndexEntry.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
