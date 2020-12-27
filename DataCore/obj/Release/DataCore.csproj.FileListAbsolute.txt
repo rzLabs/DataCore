@@ -1,0 +1,11 @@
+E:\Code\DataCore\DataCore\bin\Release\DataCore.XML
+E:\Code\DataCore\DataCore\bin\Release\DataCore.dll
+E:\Code\DataCore\DataCore\bin\Release\DataCore.pdb
+E:\Code\DataCore\DataCore\bin\Release\MoonSharp.Interpreter.dll
+E:\Code\DataCore\DataCore\bin\Release\MoonSharp.Interpreter.pdb
+E:\Code\DataCore\DataCore\bin\Release\MoonSharp.Interpreter.xml
+E:\Code\DataCore\DataCore\obj\Release\DataCore.csprojAssemblyReference.cache
+E:\Code\DataCore\DataCore\obj\Release\DataCore.csproj.CopyComplete
+E:\Code\DataCore\DataCore\obj\Release\DataCore.dll
+E:\Code\DataCore\DataCore\obj\Release\DataCore.pdb
+E:\Code\DataCore\DataCore\obj\Release\DataCore.csproj.CoreCompileInputs.cache
