@@ -29,6 +29,9 @@ namespace DataCore
         /// </summary>
         internal readonly Encoding encoding = Encoding.Default;
 
+        public bool UseModifiedXOR { get => XOR.UseModifiedKey; set => XOR.UseModifiedKey = value; }
+        public void SetXORKey(byte[] key) => XOR.SetKey(key);
+
         /// <summary>
         /// List storing all IndexEntrys inside of data.000
         /// </summary>
@@ -904,9 +907,11 @@ namespace DataCore
                     // Check if this particular extension needs to be unencrypted
                     if (XOR.Encrypted(ext)) { byte b = 0; XOR.Cipher(ref buffer, ref b); }
                 }
-                else { throw new FileNotFoundException(string.Format(@"[GetFileBytes] Cannot locate: {0}", dataPath)); }
+                else
+                    throw new FileNotFoundException(string.Format(@"[GetFileBytes] Cannot locate: {0}", dataPath));
             }
-            else { throw new Exception("[GetFileBytes] dataId is invalid! Must be between 1-8"); }
+            else
+                throw new Exception("[GetFileBytes] dataId is invalid! Must be between 1-8");
 
             return buffer;
         }
@@ -916,10 +921,8 @@ namespace DataCore
         /// </summary>
         /// <param name="entry">(IndexEntry) containing information about the target file</param>
         /// <returns>Bytes of the target file</returns>
-        public byte[] GetFileBytes(IndexEntry entry)
-        {
-            return GetFileBytes(entry.Name, entry.DataID, entry.Offset, entry.Length);
-        }
+        public byte[] GetFileBytes(IndexEntry entry) =>
+            GetFileBytes(entry.Name, entry.DataID, entry.Offset, entry.Length);
 
         /// <summary>
         /// Writes a single files from the data.xxx (specificed by dataXXX_path) to disk
@@ -953,9 +956,7 @@ namespace DataCore
                     if (XOR.Encrypted(entry.Extension)) { byte b = 0; XOR.Cipher(ref outBuffer, ref b); }
 
                     using (FileStream buildFs = new FileStream(buildPath, FileMode.Create, FileAccess.Write, FileShare.Read))
-                    {
                         buildFs.Write(outBuffer, 0, outBuffer.Length);
-                    }
 
                 }
                 else { throw new Exception("[ExportFileEntry] Failed to buffer file for export"); }
@@ -997,7 +998,7 @@ namespace DataCore
                             IndexEntry entry = entriesByExtID[entryIdx];
                             string buildPath = string.Format(@"{0}\{1}", buildDirectory, entry.Name);
 
-                            OnMessage(new MessageArgs("Exporting: {0}", entry.Name));
+                            //OnMessage(new MessageArgs("Exporting: {0}", entry.Name));
 
                             byte[] buffer = new byte[entry.Length];
 
@@ -1014,9 +1015,7 @@ namespace DataCore
                                 fs.Write(buffer, 0, buffer.Length);
 
                             if (((exported * 100) / RowCount) != ((exported - 1) * 100 / RowCount))
-                            {
                                 OnCurrentProgressChanged(new CurrentChangedArgs(exported, null));
-                            }
 
                             exported++;
                         }
@@ -1074,10 +1073,8 @@ namespace DataCore
                             fs.Write(buffer, 0, buffer.Length);
 
                         if (((exported * 100) / RowCount) != ((exported - 1) * 100 / RowCount))
-                        {
                             OnCurrentProgressChanged(new CurrentChangedArgs(exported, null));
-                        }
-                        
+
                         exported++;
                     }
                 }
@@ -1274,13 +1271,14 @@ namespace DataCore
         /// <param name="buildDirectory">Location of build folder (e.g. client/output/data-files/)</param>
         public void RebuildDataFile(int dataId, string buildDirectory)
         {
-            List<IndexEntry> filteredIndex = GetEntriesByDataId(Index, dataId, SortType.Offset);
+            List<IndexEntry> filteredIndex = GetEntriesByDataId(dataId, SortType.Offset);
 
             string dataPath = string.Format(@"{0}\data.00{1}", DataDirectory, dataId);
 
             if (File.Exists(dataPath))
             {
-                if (makeBackups) { createBackup(dataPath); }
+                if (makeBackups)
+                    createBackup(dataPath);
 
                 OnMessage(new MessageArgs(string.Format("Writing new data.00{0}...", dataId), true, 1, false, 0));
 
@@ -1288,10 +1286,8 @@ namespace DataCore
 
                 // Open the data.xxx file in inFS
                 using (FileStream inFS = new FileStream(dataPath, FileMode.Open))
-                {
                     // Create the output file
                     using (FileStream outFS = File.Create(string.Format(@"{0}_NEW", dataPath)))
-                    {
                         // Foreach file in data.xxx
                         for (int idx = 0; idx < filteredIndex.Count; idx++)
                         {
@@ -1306,14 +1302,14 @@ namespace DataCore
                                 UpdateEntryOffset(entry.Name, outFS.Position);
                                 outFS.Write(inFile, 0, inFile.Length);
                             }
-                            else { throw new Exception(string.Format("[RebuildDataFile] failed to buffer file from the original data file!")); }
+                            else
+                                throw new Exception(string.Format("[RebuildDataFile] failed to buffer file from the original data file!"));
 
                             OnCurrentProgressChanged(new CurrentChangedArgs(idx, ""));
                         }
-                    }
-                }
             }
-            else { throw new FileNotFoundException(string.Format("[RebuildDataFile] Cannot locate data file: {0}", dataPath)); }
+            else
+                throw new FileNotFoundException(string.Format("[RebuildDataFile] Cannot locate data file: {0}", dataPath));
 
             OnCurrentProgressReset(new CurrentResetArgs(true));
         }
