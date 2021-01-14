@@ -842,8 +842,11 @@ namespace DataCore
         public void UpdateEntryOffset(string fileName, long offset)
         {
             int idx = Index.FindIndex(i => i.Name == fileName);
-            if (idx != -1) { Index[idx].Offset = offset; }
-            else { throw new Exception(string.Format("[UpdateEntryOffset] IndexEntry for {0} not found!", fileName)); }
+
+            if (idx != -1)
+                Index[idx].Offset = offset;
+            else
+                throw new Exception(string.Format("[UpdateEntryOffset] IndexEntry for {0} not found!", fileName));
         }
 
 
@@ -1148,6 +1151,78 @@ namespace DataCore
                 }
             }
             else { throw new FileNotFoundException(string.Format("[ImportFileEntry(string fileName, byte[] fileBytes)] Cannot locate data file: {0}", dataPath)); }
+
+            OnCurrentProgressReset(new CurrentResetArgs(true));
+        }
+
+        public void ImportFileEntries(string[] filenames)
+        {
+            if (filenames == null || filenames.Length == 0)
+                return;
+
+            List<IndexEntry> entries = new List<IndexEntry>(filenames.Length);
+            Dictionary<string, string> paths = new Dictionary<string, string>(filenames.Length);
+
+            foreach (string filename in filenames)
+            {
+                string name = Path.GetFileName(filename);
+                string path = Path.GetDirectoryName(filename);
+
+                entries.Add(new IndexEntry() { Hash = Encoding.ASCII.GetBytes(StringCipher.Encode(name)) });
+                paths.Add(name, path);
+            }
+
+            OnCurrentMaxDetermined(new CurrentMaxArgs(8));
+
+            for (int i = 1; i < 9; i++)
+            {
+                OnCurrentProgressChanged(new CurrentChangedArgs(i, $"Importing entries to data.00{i}..."));
+
+                string dataPath = $"{DataDirectory}\\data.00{i}";
+
+                if (!File.Exists(dataPath))
+                    throw new FileNotFoundException();
+
+                if (makeBackups)
+                    createBackup(dataPath);
+
+                List<IndexEntry> filteredImports = entries.FindAll(e => e.DataID == i);
+
+                if (filteredImports.Count == 0)
+                    throw new Exception($"No results returned for data.00{i}");
+
+                using (FileStream fs = new FileStream(dataPath, FileMode.Open, FileAccess.Write, FileShare.Read))
+                {
+                    foreach (IndexEntry import in filteredImports)
+                    {
+                        string name = import.Name;
+                        string path = paths[name];
+                        byte[] buffer = null;
+
+                        if (!File.Exists(path))
+                            throw new FileNotFoundException();
+
+                        buffer = File.ReadAllBytes(path);
+
+                        if (buffer == null || buffer.Length == 0)
+                            throw new IOException();
+
+                        fs.Position = fs.Length;
+
+                        IndexEntry entry = GetEntry(name);
+                        if (entry == null)
+                        {
+                            entry = import;
+                            Index.Add(entry);
+                        }
+
+                        entry.Offset = fs.Position;
+                        entry.Length = buffer.Length;
+
+                        fs.Write(buffer, 0, buffer.Length);
+                    }
+                }
+            }
 
             OnCurrentProgressReset(new CurrentResetArgs(true));
         }

@@ -60,9 +60,6 @@ namespace DataCore.Functions
         /// </summary>
         /// <param name="ext">File extension (.dds etc) to be checked</param>
         /// <returns>true/false</returns>
-		public static bool Encrypted(string ext)
-		{
-            return !UnencryptedExtensions.Contains(ext);
-		}
-	}
+		public static bool Encrypted(string ext) => !UnencryptedExtensions.Contains(ext);
+    }
 }
