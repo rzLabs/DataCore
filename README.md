@@ -1,23 +1,14 @@
----
-title: DataCore Documentation
-authors: iSmokeDrow
-date: 2020.6.26
----
-
 # Description
----
 
 Provides interactibility with the Rappelz proprietary `Data.xxx` file storage system.
 
 ## Namespaces
----
 
 - `DataCore`
 - `DataCore.Functions`
 - `DataCore.Structures`
 
 ## Important Classes
----
 
 ### IndexEntry
 
@@ -37,7 +28,6 @@ The `IndexEntry` stores information regarding a `file` stored in the `data.xxx`
 |DataPath|`string`|The folder this entry would be stored at when using the vanilla `PatchServer`|
 
 ## Constructors
----
 
 |Arguments|Description|
 |-|-|
@@ -102,7 +92,6 @@ The `IndexEntry` stores information regarding a `file` stored in the `data.xxx`
 |RebuildDataFile | `int` dataId, `string` buildDirectory | `void` | Rebuilds the data.00{`dataId`} into the `buildDirectory`|
 
 ## Examples
----
 
 To add `DataCore` functionality to your `.net` class add the `using` directive.
 
@@ -111,7 +100,6 @@ using DataCore;
 ```
 
 ### Loading data.000
----
 
 ```csharp
 using System.Text;
@@ -139,7 +127,6 @@ class Program()
 ```
 
 ### Fetching IndexEntry
----
 
 ```csharp
 using System.Text;
@@ -173,7 +160,6 @@ class Program()
 ```
 
 ### Exporting File'(s)
----
 
 #### Single
 
