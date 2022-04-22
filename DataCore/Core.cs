@@ -906,18 +906,7 @@ namespace DataCore
         /// </summary>
         /// <param name="fileName">Name o the IndexEntry being saught</param>
         /// <returns>Matching IndexEntry of fileName</returns>
-        public IndexEntry GetEntryNoLocale(string fileName)
-        {
-            var fileEntry = GetEntry(fileName);
-
-            // TODO: must consider that fileName already contains (Ascii)
-
-
-            if (fileEntry == null)
-                fileEntry = GetEntry(fileName.Replace(".", "(ascii)."));
-
-            return fileEntry;
-        }
+        public IndexEntry GetEntryNoLocale(string fileName) => GetEntry(fileName) ?? GetEntry(fileName.Replace(".", "(ascii)."));
 
         #endregion
 
@@ -1490,8 +1479,6 @@ namespace DataCore
         #endregion
 
         #region Misc Methods
-
-        //TODO: SetEncoding
 
         /// <summary>
         /// Clears the loaded index
