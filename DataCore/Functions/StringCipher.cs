@@ -30,7 +30,7 @@ namespace DataCore.Functions
 
         static char[] encryptLastCharTable = "^&T_Nsd{xo5v`rOYV+,iIU#kCJq8$\'~L0P]FeBn-Au(pXHZhwDy2}agWG7K=bQ;SRt)46l@jE%9!c1[3fmMz".ToCharArray();
 
-        static byte[] encryptTablePhase2 = new byte[0x80]{
+        static byte[] encryptTablePhase2 = new byte[0x80] {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x67, 0x20, 0x00, 0x26, 0x77, 0x2C, 0x6C, 0x4E, 0x58, 0x4F, 0x00, 0x37, 0x2E, 0x25, 0x65, 0x00, 0x38, 0x5F, 0x5D, 0x23, 0x50, 0x31, 0x2D, 0x24, 0x56, 0x5B, 0x00, 0x59, 0x00, 0x5E, 0x00, 0x00,
         0x4B, 0x7D, 0x6A, 0x30, 0x40, 0x47, 0x53, 0x29, 0x41, 0x78, 0x79, 0x36, 0x39, 0x45, 0x46, 0x7B, 0x57, 0x62, 0x3D, 0x52, 0x76, 0x74, 0x68, 0x32, 0x34, 0x4D, 0x28, 0x6B, 0x00, 0x6D, 0x61, 0x2B,
@@ -55,7 +55,7 @@ namespace DataCore.Functions
             hash[1] = val2;
         }
 
-        public static bool IsEncoded(string hash) { return Encode(Decode(hash)) == hash; }
+        public static bool IsEncoded(string hash) => Encode(Decode(hash)) == hash;
 
         public static bool IsEncoded(byte[] hash)
         {
@@ -79,10 +79,13 @@ namespace DataCore.Functions
             for (i = 0; i < hashSize; i++)
             {
                 computeVar = hash[i];
+
                 for (j = 0; j < computeLoop; j++)
                 {
                     computeVar = decryptTablePhase2[computeVar];
-                    if (computeVar == 0x00) { computeVar = 0xFF; }
+
+                    if (computeVar == 0x00)
+                        computeVar = 0xFF;
                 }
 
                 hash[i] = computeVar;
@@ -93,7 +96,9 @@ namespace DataCore.Functions
         public static string Decode(byte[] hash)
         {
             byte[] reducedHash = new byte[hash.Length - 2];
-            if (hash.Length == 0) { return null; }
+
+            if (hash.Length == 0)
+                return null;
 
             Array.Copy(hash, 1, reducedHash, 0, hash.Length - 2);
 
@@ -107,7 +112,9 @@ namespace DataCore.Functions
         {
             byte[] hash = Encoding.ASCII.GetBytes(hashName);
             byte[] reducedHash = new byte[hash.Length - 2];
-            if (hash.Length == 0) { return null; }
+
+            if (hash.Length == 0)
+                return null;
 
             Array.Copy(hash, 1, reducedHash, 0, hash.Length - 2);
 
@@ -196,11 +203,15 @@ namespace DataCore.Functions
         {
             int checksum = 0;
 
-            if (hash == null) return 1;
+            if (hash == null) 
+                return 1;
 
-            for (int i = 0; i < hash.Length; i++) { checksum = checksum * 31 + toLower(hash[i]); }
+            for (int i = 0; i < hash.Length; i++)
+                checksum = checksum * 31 + toLower(hash[i]);
 
-            if (checksum < 0) { checksum = -checksum; }
+            if (checksum < 0)
+                checksum = -checksum;
+
             return (checksum & 0x07) + 1;
         }
 
@@ -215,7 +226,8 @@ namespace DataCore.Functions
 
         static int toLower(byte b)
         {
-            if (b >= 'A' && b <= 'Z') { return b - ('A' - 'a'); }
+            if (b >= 'A' && b <= 'Z') 
+                return b - ('A' - 'a');
             
             return b;
         }

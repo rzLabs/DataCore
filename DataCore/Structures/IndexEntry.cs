@@ -28,6 +28,9 @@ namespace DataCore.Structures
             }
         }
 
+        /// <summary>
+        /// The extension of this file entry (e.g. nx3) without preceeding period
+        /// </summary>
         public string Extension
         {
             get
@@ -35,6 +38,7 @@ namespace DataCore.Structures
                 if (!string.IsNullOrEmpty(Name))
                 {
                     string ret = Name.Remove(0, Name.Length - 3);
+
                     if (ret[0] == '.')
                         ret = ret.Remove(0, 1); // Consider 2 character extensions like 'fx'
 

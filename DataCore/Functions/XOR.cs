@@ -4,14 +4,17 @@ namespace DataCore.Functions
 {
     /// <summary>
     /// Original XOR class provided by Glandu2 and adapted originally by xXExiledXx for C# 
-    /// adapted and restructed for Portal by iSmokeDrow.
+    /// adapted and refactored by iSmokeDrow.
     /// 
     /// </summary>
 	public class XOR
 	{
-        public static bool UseModifiedKey = false;
+        /// <summary>
+        /// The current key being used by the Cipher method.
+        /// </summary>
+        protected static byte[] _key = null;
 
-        public static void SetKey(byte[] key) => s_CipherTable = key;
+        public static bool UseModifiedKey = false;
 
         /// <summary>
         /// Legend of non-encrypted file extensions (files that will not be encoded during patching)
@@ -19,10 +22,10 @@ namespace DataCore.Functions
         public static List<string> UnencryptedExtensions { get; set; } = new List<string> { "mp3", "ogg", "raw", "dds", "tga", "naf", "nx3", "cob", "nfm" };
 
         /// <summary>
-        /// Table of bytes to use for encoding files during patching
+        /// The default (vanilla) SFrame XOR cipher (epic 4-9.5?)
         /// </summary>
-		static byte[] s_CipherTable = new byte[]
-		{
+        public readonly static byte[] DefaultKey = new byte[]
+        {
             0x77, 0xe8, 0x5e, 0xec, 0xb7, 0x4e, 0xc1, 0x87, 0x4f, 0xe6, 0xf5, 0x3c, 0x1f, 0xb3, 0x15, 0x43,
             0x6a, 0x49, 0x30, 0xa6, 0xbf, 0x53, 0xa8, 0x35, 0x5b, 0xe5, 0x9e, 0x0e, 0x41, 0xec, 0x22, 0xb8,
             0xd4, 0x80, 0xa4, 0x8c, 0xce, 0x65, 0x13, 0x1d, 0x4b, 0x08, 0x5a, 0x6a, 0xbb, 0x6f, 0xad, 0x25,
@@ -42,15 +45,30 @@ namespace DataCore.Functions
         };
 
         /// <summary>
+        /// Table of bytes to use for encoding files during patching
+        /// </summary>
+		public static byte[] Key
+        {
+            get
+            {
+                if (_key == null)
+                    _key = DefaultKey;
+
+                return _key;
+            }
+            set => _key = value;
+        }
+
+        /// <summary>
         /// Performs an crypto-ciper on given buffer
         /// </summary>
         /// <param name="buffer">Byte collection to be encrypted</param>
-        /// <param name="index">Index to perform encryption on buffer</param>
+        /// <param name="index">Index of the buffer to cipher</param>
         public static void Cipher(ref byte[] buffer, ref byte index)
         {
             for (int i = 0; i < buffer.Length; i++)
             {
-                buffer[i] ^= s_CipherTable[index];
+                buffer[i] ^= Key[index];
                 index++;
             }
         }

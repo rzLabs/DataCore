@@ -29,8 +29,25 @@ namespace DataCore
         /// </summary>
         internal readonly Encoding encoding = Encoding.Default;
 
-        public bool UseModifiedXOR { get => XOR.UseModifiedKey; set => XOR.UseModifiedKey = value; }
-        public void SetXORKey(byte[] key) => XOR.SetKey(key);
+        /// <summary>
+        /// If true this instance of DataCore will use a provided XOR key to perform cipher operations.
+        /// </summary>
+        public bool UseModifiedXOR 
+        { 
+            get => XOR.UseModifiedKey;
+            set => XOR.UseModifiedKey = value;
+        }
+
+        /// <summary>
+        /// Determines if the XOR key is at-least the correct length.
+        /// </summary>
+        public bool ValidXOR => XOR.Key.Length == 256;
+
+        /// <summary>
+        /// Set the key to be used in cipher operations.
+        /// </summary>
+        /// <param name="key">Cipher key as byte[]</param>
+        public void SetXORKey(byte[] key) => XOR.Key = key;
 
         /// <summary>
         /// List storing all IndexEntrys inside of data.000
@@ -40,17 +57,20 @@ namespace DataCore
         /// <summary>
         /// Count of IndexEntrys listed in the loaded Index
         /// </summary>
-        public int RowCount { get { return Index.Count; } }
+        public int RowCount => Index.Count;
 
         /// <summary>
         /// The directory where the Rappelz client data.xxx files are located
         /// </summary>
         public string DataDirectory { get; set; }
 
+        /// <summary>
+        /// If true backups of any data.xxx to be modified (if applicable) will be made.
+        /// </summary>
         public bool Backups
         {
-            get { return makeBackups; }
-            set { makeBackups = value; }
+            get => makeBackups;
+            set => makeBackups = value;
         }
 
         LUA luaIO;
@@ -61,18 +81,22 @@ namespace DataCore
         /// Occurs when a message is transmitted to the caller for display
         /// </summary>
         public event EventHandler<MessageArgs> MessageOccured;
+
         /// <summary>
         /// Occurs when a non-critical issues has been encountered
         /// </summary>
         public event EventHandler<WarningArgs> WarningOccured;
+
         /// <summary>
         /// Occurs when the maximum progress of an operation has been determined
         /// </summary>
         public event EventHandler<CurrentMaxArgs> CurrentMaxDetermined;
+
         /// <summary>
         /// Ocurrs when the progress value of the current operation has been changed
         /// </summary>
         public event EventHandler<CurrentChangedArgs> CurrentProgressChanged;
+
         /// <summary>
         /// Occurs when an operation has completed and the progressbar values of the caller need to be reset
         /// </summary>
@@ -199,10 +223,7 @@ namespace DataCore
         /// </summary>
         /// <param name="extension">Extension to be determined</param>
         /// <returns>True or False</returns>
-        public bool ExtensionEncrypted(string extension)
-        {
-            return XOR.Encrypted(extension);
-        }
+        public bool ExtensionEncrypted(string extension) => XOR.Encrypted(extension);
 
         #endregion
 
@@ -246,7 +267,9 @@ namespace DataCore
                     OnCurrentProgressReset(new CurrentResetArgs(true));
                 }
             }
-            else { throw new FileNotFoundException(string.Format("[Create] Cannot locate dump directory at: {0}", dumpDirectory)); }
+            else { 
+                throw new FileNotFoundException(string.Format("[Create] Cannot locate dump directory at: {0}", dumpDirectory));
+            }
         }
 
         /// <summary>
@@ -282,12 +305,15 @@ namespace DataCore
                         ms.Read(array, 0, array.Length);
 
                         XOR.Cipher(ref array, ref b);
+
                         byte[] bytes = new byte[array[0]];
                         ms.Read(bytes, 0, bytes.Length);
+
                         XOR.Cipher(ref bytes, ref b);
 
                         byte[] value = new byte[8];
                         ms.Read(value, 0, value.Length);
+
                         XOR.Cipher(ref value, ref b);
 
                         Index.Add(new IndexEntry()
@@ -305,12 +331,17 @@ namespace DataCore
                     }
                 }
             }
-            else { throw new FileNotFoundException(string.Format("[Load] Cannot find data.000 at path: {0}", indexPath)); }
+            else { 
+                throw new FileNotFoundException(string.Format("[Load] Cannot find data.000 at path: {0}", indexPath));
+            }
 
             OnCurrentProgressReset(new CurrentResetArgs(true));
         }
 
-        public void Save() { Save(DataDirectory); }
+        /// <summary>
+        /// Save the currently loaded Index to data.000
+        /// </summary>
+        public void Save() => Save(DataDirectory);
 
         /// <summary>
         /// Saves the provided indexList into a ready to use data.000 index
@@ -321,15 +352,16 @@ namespace DataCore
         {
             string buildPath = string.Format(@"{0}\data.000", buildDirectory);
 
-            if (makeBackups) { createBackup(buildPath); }
-
-            if (File.Exists(buildPath)) { File.Delete(buildPath); }
+            if (File.Exists(buildPath))
+                if (makeBackups)
+                    createBackup(buildPath);
 
             OnMessage(new MessageArgs("Writing new data.000..."));
 
             using (FileStream fs = File.Create(buildPath))
             {
                 byte b = 0;
+                int lastIdx = 0; // Moved out of the for idx loop, didn't make sense. 
 
                 OnCurrentMaxDetermined(new CurrentMaxArgs(Index.Count));
 
@@ -343,11 +375,15 @@ namespace DataCore
                     Buffer.BlockCopy(indexEntry.Hash, 0, buffer, 1, hashLen);
                     Buffer.BlockCopy(BitConverter.GetBytes(indexEntry.Offset), 0, buffer, hashLen + 1, 4);
                     Buffer.BlockCopy(BitConverter.GetBytes(indexEntry.Length), 0, buffer, hashLen + 5, 4);
+
                     XOR.Cipher(ref buffer, ref b);
+
                     fs.Write(buffer, 0, buffer.Length);
 
-                    int lastIdx = 0;
-                    if (lastIdx - idx > 64000) { OnCurrentProgressChanged(new CurrentChangedArgs(idx, "")); lastIdx = idx; }
+                    if (lastIdx - idx > 64000) {
+                        OnCurrentProgressChanged(new CurrentChangedArgs(idx, ""));
+                        lastIdx = idx;
+                    }
                 }
 
                 OnCurrentProgressReset(new CurrentResetArgs(true));
@@ -388,7 +424,10 @@ namespace DataCore
         public long GetStoredSize(List<IndexEntry> filteredList)
         {
             long size = 0;
-            foreach (IndexEntry entry in filteredList) { size += entry.Length; }
+
+            foreach (IndexEntry entry in filteredList)
+                size += entry.Length;
+
             return size;
         }
 
@@ -404,7 +443,8 @@ namespace DataCore
             switch (dataId)
             {
                 case 0:
-                    foreach (IndexEntry entry in Index) { size += entry.Length; }
+                    foreach (IndexEntry entry in Index) 
+                        size += entry.Length; 
                     break;
 
                 case 1:
@@ -443,6 +483,11 @@ namespace DataCore
             return size;
         }
 
+        /// <summary>
+        /// Get the physical space consumed by the data unit matching provided dataId
+        /// </summary>
+        /// <param name="dataId">ID of desired data storage unit or 0 for all</param>
+        /// <returns>Space consumed on disk</returns>
         public long GetPhysicalSize(int dataId)
         {
             string path = null;
@@ -506,6 +551,11 @@ namespace DataCore
             return fragmentedSize;
         }
 
+        /// <summary>
+        /// Get the file count being stored by the data unit matching provided dataId
+        /// </summary>
+        /// <param name="dataId">ID of desired data storage unit or 0 for the entire index</param>
+        /// <returns>File count of matching data idx</returns>
         public int GetFileCount(int dataId)
         {
             if (dataId == 0)
@@ -589,14 +639,14 @@ namespace DataCore
         /// </summary>
         /// <param name="index">Oridinal position of the desired IndexEntry</param>
         /// <returns>(IndexEntry)</returns>
-        public IndexEntry GetEntry(int index) { return Index[index]; }
+        public IndexEntry GetEntry(int index) => Index[index];
 
         /// <summary>
         /// Returns an IndexEntry based on it's [UNHASHED] name
         /// </summary>
         /// <param name="name">File name being searched for</param>
         /// <returns>IndexEntry of name or null</returns>
-        public IndexEntry GetEntry(string name) { return Index.Find(i => i.Name == name); }
+        public IndexEntry GetEntry(string name) => Index.Find(i => i.Name == name);
 
         /// <summary>
         /// Returns an IndexEntry based on it's dataId and offset
@@ -611,7 +661,8 @@ namespace DataCore
         /// </summary>
         /// <param name="partialName">Partial fileName (e.g. db_) to be searched for</param>
         /// <returns>Populated List of IndexEntries</returns>
-        public List<IndexEntry> GetEntriesByPartialName(string partialName) { return Index.FindAll(i => Regex.Match(i.Name, partialName.Replace("*", ".")).Success); }
+        public List<IndexEntry> GetEntriesByPartialName(string partialName) =>
+            Index.FindAll(i => i.Name.Contains(partialName));
 
         /// <summary>
         /// Returns a List of all entries matching dataId
@@ -635,13 +686,13 @@ namespace DataCore
         {
             switch (type)
             {
-                case SortType.Name: // Name
+                case SortType.Name: 
                     return Index.FindAll(i => i.DataID == dataId).OrderBy(i => i.Name).ToList();
 
-                case SortType.Offset: // Offset
+                case SortType.Offset: 
                     return Index.FindAll(i => i.DataID == dataId).OrderBy(i => i.Offset).ToList();
 
-                case SortType.Size: // Size
+                case SortType.Size: 
                     return Index.FindAll(i => i.DataID == dataId).OrderBy(i => i.Length).ToList();
             }
 
@@ -859,6 +910,9 @@ namespace DataCore
         {
             var fileEntry = GetEntry(fileName);
 
+            // TODO: must consider that fileName already contains (Ascii)
+
+
             if (fileEntry == null)
                 fileEntry = GetEntry(fileName.Replace(".", "(ascii)."));
 
@@ -871,14 +925,21 @@ namespace DataCore
 
 
         /// <summary>
-        /// Gets the collection of bytes that makes up a given file
+        /// Get the collection of bytes representing the provided file entry 
         /// </summary>
-        /// <param name="fileName">Name of the file to generate hash for</param>
-        public byte[] GetFileBytes(string fileName)
+        /// <param name="entry">Entry storing information regarding the file</param>
+        /// <param name="offset">Where in the file to begin reading</param>
+        public byte[] GetFileBytes(IndexEntry entry, int offset = 0)
         {
-            var fileEntry = GetEntry(fileName.ToLower());
+            int dataOffset = (int)entry.Offset;
+            int fileLen = (offset > 0) ? entry.Length - offset : entry.Length;
 
-            return GetFileBytes(fileEntry);
+            byte[] fileBuffer = GetFileBytes(entry.Name, entry.DataID, dataOffset, entry.Length);
+            byte[] outBuffer = new byte[fileLen];
+
+            Array.Copy(fileBuffer, offset, outBuffer, 0, fileLen);
+
+            return outBuffer;
         }
 
         /// <summary>
@@ -908,7 +969,11 @@ namespace DataCore
                     }
 
                     // Check if this particular extension needs to be unencrypted
-                    if (XOR.Encrypted(ext)) { byte b = 0; XOR.Cipher(ref buffer, ref b); }
+                    if (XOR.Encrypted(ext)) 
+                    { 
+                        byte b = 0;
+                        XOR.Cipher(ref buffer, ref b);
+                    }
                 }
                 else
                     throw new FileNotFoundException(string.Format(@"[GetFileBytes] Cannot locate: {0}", dataPath));
@@ -962,7 +1027,9 @@ namespace DataCore
                         buildFs.Write(outBuffer, 0, outBuffer.Length);
 
                 }
-                else { throw new Exception("[ExportFileEntry] Failed to buffer file for export"); }
+                else { 
+                    throw new Exception("[ExportFileEntry] Failed to buffer file for export");
+                }
 
                 outBuffer = null;
             }
@@ -1090,10 +1157,8 @@ namespace DataCore
         /// Writes/Appends a file at the filePath in(to) the Rappelz data.xxx storage system
         /// </summary>
         /// <param name="filePath">Location of the file being imported</param>
-        public void ImportFileEntry(string filePath)
-        {
+        public void ImportFileEntry(string filePath) =>
             ImportFileEntry(Path.GetFileName(filePath), File.ReadAllBytes(filePath));
-        }
 
         /// <summary>
         /// Writes/Appends a file represented by fileBytes in(to) the Rappelz data.xxx storage system with given fileName
@@ -1113,7 +1178,9 @@ namespace DataCore
             if (File.Exists(dataPath))
             {
                 // Create backup (if applicable)
-                if (makeBackups) { createBackup(dataPath); }
+                if (makeBackups) { 
+                    createBackup(dataPath);
+                }
 
                 OnCurrentMaxDetermined(new CurrentMaxArgs(fileLen));
 
@@ -1129,15 +1196,17 @@ namespace DataCore
                     }
 
                     // If the fileBytes need to be encrypted do so
-                    if (XOR.Encrypted(fileExt)) { byte b = 0; XOR.Cipher(ref fileBytes, ref b); }
+                    if (XOR.Encrypted(fileExt)) {
+                        byte b = 0;
+                        XOR.Cipher(ref fileBytes, ref b);
+                    }
 
                     // Set the filestreams position accordingly
                     fs.Position = (fileLen < entry.Length) ? entry.Offset : fs.Length;
 
                     // Update the entry accordingly
                     entry.Offset = fs.Position;
-                    if (entry.Length != fileBytes.Length)
-                        entry.Length = fileBytes.Length;
+                    entry.Length = fileBytes.Length;
 
                     int chunkSize = Convert.ToInt32(fileLen * 0.02);
 
@@ -1155,6 +1224,10 @@ namespace DataCore
             OnCurrentProgressReset(new CurrentResetArgs(true));
         }
 
+        /// <summary>
+        /// Import a collection of files into the data.xxx storage system
+        /// </summary>
+        /// <param name="filenames">Array of fully qualified file paths</param>
         public void ImportFileEntries(string[] filenames)
         {
             if (filenames == null || filenames.Length == 0)
@@ -1189,7 +1262,7 @@ namespace DataCore
                 List<IndexEntry> filteredImports = entries.FindAll(e => e.DataID == i);
 
                 if (filteredImports.Count == 0)
-                    throw new Exception($"No results returned for data.00{i}");
+                    continue;
 
                 using (FileStream fs = new FileStream(dataPath, FileMode.Open, FileAccess.Write, FileShare.Read))
                 {
@@ -1197,12 +1270,29 @@ namespace DataCore
                     {
                         string name = import.Name;
                         string path = paths[name];
+
+                        int extOffset = name.IndexOf('.');
+                        int count = name.Length - extOffset;
+
+                        string ext = name.Substring(extOffset, count);
+
+                        string filename = $"{path}\\{name}";
                         byte[] buffer = null;
 
-                        if (!File.Exists(path))
-                            throw new FileNotFoundException();
+                        if (!File.Exists(filename))
+                        {
+                            OnMessage(new MessageArgs($"Failed to locate import file: {name} at: {path}"));
+                            continue;
+                        }
 
-                        buffer = File.ReadAllBytes(path);
+                        buffer = File.ReadAllBytes(filename);
+
+                        // If the file needs to be encrypted do so
+                        if (XOR.Encrypted(ext))
+                        {
+                            byte b = 0;
+                            XOR.Cipher(ref buffer, ref b);
+                        }
 
                         if (buffer == null || buffer.Length == 0)
                             throw new IOException();
@@ -1228,10 +1318,12 @@ namespace DataCore
         }
 
         /// <summary>
-        /// Overwrites a previous files bytes with zeros in effect erasing it
+        /// Overwrites a previous files bytes with zeros in effect erasing it 
+        /// !!! WARNING!!! This does not reduce the amount of space previously consumed by the deleted file
         /// <param name="dataId">Id of the data.xxx file to be altered</param>
         /// <param name="offset">Offset to begin writing zeros</param>
         /// <param name="length">How far to write zeros</param>
+        /// </summary>
         public void DeleteFileEntry(int dataId, int offset, int length)
         {
             // Determine the path of this particular file's data.xxx exists
@@ -1242,7 +1334,9 @@ namespace DataCore
 
             OnMessage(new MessageArgs("Attempting to delete file content from data.00{0}", dataId));
 
-            if (makeBackups) { createBackup(dataPath); }
+            if (makeBackups) { 
+                createBackup(dataPath);
+            }
 
             byte[] inBytes = File.ReadAllBytes(dataPath);
             byte[] outBytes = new byte[inBytes.Length - length];
@@ -1256,8 +1350,12 @@ namespace DataCore
 
             try
             {
-                using (FileStream fs = new FileStream(dataPath, FileMode.Append, FileAccess.ReadWrite, FileShare.None))
+                using (FileStream fs = new FileStream(dataPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
+                {
+                    fs.SetLength(outBytes.Length);
+                    fs.Seek(0, SeekOrigin.Begin);
                     fs.Write(outBytes, 0, outBytes.Length);
+                }
             }
             catch (Exception ex) { throw ex; }
             finally
@@ -1339,8 +1437,8 @@ namespace DataCore
         }
 
         /// <summary>
-        /// Rebuilds a data.xxx file potentially removing blank space created by the OEM update method.
-        /// Effectiveness increases depending on amount of updates made to desired data.xxx file.
+        /// Rebuilds a data.xxx file potentially removing blank space created by the vanilla update process.
+        /// Effectiveness increases depending on amount of updates previously applied to current data.xxx file.
         /// </summary>
         /// <param name="dataId">Id of the data.xxx file to be rebuilt</param>
         /// <param name="buildDirectory">Location of build folder (e.g. client/output/data-files/)</param>
@@ -1393,21 +1491,16 @@ namespace DataCore
 
         #region Misc Methods
 
-        /// <summary>
-        /// Initializes the LUA engine used to load dCore.lua configurations
-        /// </summary>
-        public void LoadConfig()
-        {
-            Extensions.ValidExtensions = luaIO.GetExtensions();
-            Extensions.GroupExtensions = luaIO.GetGroupExports();
-            XOR.UnencryptedExtensions = luaIO.GetUnencryptedExtensions();
-        }
+        //TODO: SetEncoding
 
         /// <summary>
         /// Clears the loaded index
         /// </summary>
         public void Clear()
         {
+            UseModifiedXOR = false;
+            XOR.Key = XOR.DefaultKey;
+
             Index.Clear();
         }
 
