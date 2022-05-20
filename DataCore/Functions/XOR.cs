@@ -12,7 +12,7 @@ namespace DataCore.Functions
         /// <summary>
         /// The current key being used by the Cipher method.
         /// </summary>
-        protected static byte[] _key = null;
+        protected static byte[] _key = DefaultKey;
 
         public static bool UseModifiedKey = false;
 
@@ -51,7 +51,7 @@ namespace DataCore.Functions
         {
             get
             {
-                if (_key == null)
+                if (_key is null)
                     _key = DefaultKey;
 
                 return _key;

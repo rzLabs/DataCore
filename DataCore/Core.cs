@@ -38,6 +38,8 @@ namespace DataCore
             set => XOR.UseModifiedKey = value;
         }
 
+        public byte[] XORKey => XOR.Key;
+
         /// <summary>
         /// Determines if the XOR key is at-least the correct length.
         /// </summary>
@@ -161,30 +163,21 @@ namespace DataCore
         {
             makeBackups = backup;
             this.encoding = encoding;
+
+            UseModifiedXOR = false;
+            XOR.Key = XOR.DefaultKey;
         }
 
-        /// <summary>
-        /// Instantiates the Core by providing backup and configuration file path
-        /// </summary>
-        /// <param name="backup">Determines if this core will use the backup function</param>
-        /// <param name="configPath">Path to the dCore.lua containing overrides</param>
-        public Core(bool backup, string configPath)
+        public Core(bool backup, Encoding encoding, byte[] xorKey)
         {
-            makeBackups = backup;
-            luaIO = new LUA(IO.LoadConfig(configPath));
-        }
-
-        /// <summary>
-        /// Instantiates the Core by providing file encoding and backup and configPath
-        /// </summary>
-        /// <param name="backup">Determines if this core will use the backup function</param>
-        /// <param name="encoding">Encoding to be applied to certain conversions</param>
-        /// <param name="configPath">Path to the dCore.lua containing overrides</param>
-        public Core(Encoding encoding, bool backup, string configPath)
-        {
-            makeBackups = backup;
+            makeBackups = true;
             this.encoding = encoding;
-            luaIO = new LUA(IO.LoadConfig(configPath));
+
+            UseModifiedXOR = true;
+            XOR.Key = xorKey;
+
+            if (xorKey == null || xorKey.Length != 256)
+                throw new Exception("Invalid XOR Key!");
         }
 
         #endregion
